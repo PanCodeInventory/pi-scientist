@@ -17,6 +17,35 @@ import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Resolve the bundled agents directory for both development and packaged runs.
+ *
+ * - Development / jiti: this file lives at the package root, so agents are in
+ *   `<root>/agents`.
+ * - Built package: this file is emitted to `<root>/dist/agents.js`, while
+ *   package.json ships `agents/` as a sibling of `dist/`, so agents are in
+ *   `<root>/agents`, i.e. `../agents` from here.
+ */
+function resolveBundledAgentsDir(): string | null {
+	const candidates = [
+		path.join(__dirname, "agents"),
+		path.resolve(__dirname, "..", "agents"),
+	];
+
+	for (const candidate of candidates) {
+		try {
+			const entries = fs.readdirSync(candidate, { withFileTypes: true });
+			if (entries.some((entry) => entry.name.endsWith(".md") && (entry.isFile() || entry.isSymbolicLink()))) {
+				return candidate;
+			}
+		} catch {
+			// Try the next candidate.
+		}
+	}
+
+	return null;
+}
+
 export interface AgentConfig {
 	name: string;
 	description: string;
@@ -87,6 +116,6 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
  * No project-scope discovery — all agents are self-contained.
  */
 export function discoverScientists(): AgentDiscoveryResult {
-	const dir = path.join(__dirname, "agents");
-	return { agents: loadAgentsFromDir(dir) };
+	const dir = resolveBundledAgentsDir();
+	return { agents: dir ? loadAgentsFromDir(dir) : [] };
 }
