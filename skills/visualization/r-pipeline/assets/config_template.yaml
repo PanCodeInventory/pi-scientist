@@ -1,0 +1,82 @@
+# BasicViz Pipeline Configuration Template
+# Copy this file to your project root as "config.yaml" and customize for your data.
+
+# --- Input/Output ---
+input_h5ad: "path/to/your/data.h5ad"   # REQUIRED: path to .h5ad file
+output_dir: "results"                   # Output directory for plots
+
+# --- Global Theme ---
+theme:
+  font_size: 14
+  font_family: "Arial"
+  aspect_ratio: 1
+
+# --- Plot Definitions ---
+# Add, remove, or reorder plots as needed.
+# The pipeline generates one PDF per plot entry.
+plots:
+  # 1. UMAP colored by cell type
+  - name: "umap_clusters"
+    type: "umap"
+    color_by: "cell_type"              # REQUIRED: adata.obs column
+    title: "Cell Clusters"
+    palette: "elegant"                 # Options: elegant, npg, jco, igv, or RColorBrewer name
+    point_size: 0.5                    # Default: 0.3
+
+  # 2. UMAP faceted by experimental group
+  - name: "umap_group"
+    type: "umap"
+    color_by: "cell_type"
+    facet_by: "condition"              # Optional: creates side-by-side panels
+    title: "Experimental Group"
+    palette: "elegant"
+    point_size: 0.5
+
+  # 3. Stacked bar composition (relative proportions)
+  - name: "composition_stack"
+    type: "proportion"
+    group_by: "condition"              # X-axis grouping
+    fill_by: "cell_type"               # Bar fill column
+    position: "fill"                   # "fill" (relative) or "stack" (absolute)
+    title: "Composition"
+    palette: "elegant"
+
+  # 4. Marker gene dotplot
+  - name: "marker_expression"
+    type: "dotplot"
+    group_by: "cell_type"              # Y-axis; must match dotplot.markers keys
+    title: "Marker Expression"
+
+  # 5. Feature expression on UMAP (multi-page PDF)
+  - name: "marker_features"
+    type: "feature"
+    title: "Marker Features"
+
+  # 6. Alluvial river plot
+  - name: "composition_river"
+    type: "river"
+    group_by: "condition"              # Flow direction (X-axis)
+    fill_by: "cell_type"               # Stratum fill
+    title: "Composition Changes"
+
+# --- Marker Gene Configuration ---
+# Used by dotplot and feature plots.
+# Keys MUST exactly match unique values in the group_by column of dotplot plot.
+# Gene names MUST exist in adata.var_names (case-sensitive).
+dotplot:
+  markers:
+    Cluster A:
+      - Gene1
+      - Gene2
+      - Gene3
+    Cluster B:
+      - Gene4
+      - Gene5
+
+# --- Manual Color Overrides (Optional) ---
+# Override auto-generated colors for specific columns.
+# Unspecified categories will be auto-colored.
+# colors:
+#   cell_type:
+#     "Cluster A": "#E15759"
+#     "Cluster B": "#4E79A7"

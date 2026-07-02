@@ -1,0 +1,22 @@
+--- a/src/tooluniverse/cli.py
++++ b/src/tooluniverse/cli.py
+@@ -72,9 +72,18 @@ def _get_tu():
+     from tooluniverse import ToolUniverse
+
+     tu = ToolUniverse()
+-    if not tu.all_tool_dict:
++    # Whitelist / exclusion driven by env vars (comma-separated):
++    #   TOOLUNIVERSE_CATEGORIES    — if set, load only these categories.
++    #   TOOLUNIVERSE_EXCLUDE_TOOLS — drop these individual tool names after load.
++    # Category keys are case-sensitive (EuropePMC, OpenAlex are capitalized).
++    # When neither is set, behavior is unchanged (auto-loads every built-in
++    # category) — backward compatible.
++    cats_env = os.environ.get("TOOLUNIVERSE_CATEGORIES", "").strip()
++    excl_env = os.environ.get("TOOLUNIVERSE_EXCLUDE_TOOLS", "").strip()
++    cats = [c.strip() for c in cats_env.split(",") if c.strip()] or None
++    excl = [c.strip() for c in excl_env.split(",") if c.strip()] or None
++    if cats is not None or excl is not None:
++        tu.load_tools(categories=cats, exclude_tools=excl)
++    elif not tu.all_tool_dict:
+         tu._auto_load_tools_if_empty()
+     return tu

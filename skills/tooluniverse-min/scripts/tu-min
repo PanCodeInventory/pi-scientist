@@ -1,0 +1,67 @@
+#!/bin/sh
+# tu-min: run the `tu` CLI with a curated whitelist of ToolUniverse categories.
+#
+# Whitelist scope (per user requirement): TCGA/cancer survival & clinical data,
+# biomedical literature search, preprints/repositories — plus the infrastructure
+# categories that `tu` needs to function. All NCBI-hosted tools (PubTator3,
+# LitVar) are excluded because they are unreachable through the current proxy.
+#
+# Excluded individual tools (within retained categories):
+#   EuropePMC_get_fulltext — NCBI proxy unreachable
+#   Tool_RAG, Tool_Finder  — need optional embedding deps (install
+#                            tooluniverse[embedding] to re-enable, then drop
+#                            them from TOOLUNIVERSE_EXCLUDE_TOOLS below)
+#
+# Category keys are CASE-SENSITIVE: EuropePMC and OpenAlex are capitalized.
+# A misspelled category name triggers a silent fallback that loads ALL ~2524
+# tools — keep the list exact.
+export TOOLUNIVERSE_CATEGORIES="compact_mode,tool_finder,special_tools,url,file_download,gdc,cbioportal,cancer_prognosis,survival,timer,pubmed,EuropePMC,semantic_scholar,semantic_scholar_ext,OpenAlex,crossref,pmc,core,dblp,doaj,hal,unpaywall,arxiv,biorxiv,biorxiv_ext,medrxiv,osf_preprints,zenodo"
+export TOOLUNIVERSE_EXCLUDE_TOOLS="EuropePMC_get_fulltext,Tool_RAG,Tool_Finder"
+
+# ── Proxy (so Python's urllib inside `tu` inherits it) ───────────────────
+# `tu` uses urllib, which does NOT pick up mihomo's transparent forwarding
+# for all domains (PubMed works, but GDC/cBioPortal SSL-handshake fail without
+# this). The scientist plugin routes ALL API traffic through port 7897.
+# Don't override if the caller already set a proxy.
+if [ -z "$http_proxy" ] && [ -z "$HTTP_PROXY" ]; then
+    export http_proxy="http://127.0.0.1:7890"
+    export HTTP_PROXY="http://127.0.0.1:7890"
+fi
+if [ -z "$https_proxy" ] && [ -z "$HTTPS_PROXY" ]; then
+    export https_proxy="http://127.0.0.1:7890"
+    export HTTPS_PROXY="http://127.0.0.1:7890"
+fi
+
+# ── Locate the `tu` executable ───────────────────────────────────────────
+# Resolution order:
+#   1. $TU env var          — explicit override (e.g. TU=/opt/tu/bin/tu)
+#   2. `tu` on PATH
+#   3. Default install location from setup/install-python-deps.sh:
+#      ~/.venvs/tooluniverse/bin/tu
+if [ -z "$TU" ]; then
+    TU="$(command -v tu 2>/dev/null)" || true
+    if [ -z "$TU" ] && [ -x "$HOME/.venvs/tooluniverse/bin/tu" ]; then
+        TU="$HOME/.venvs/tooluniverse/bin/tu"
+    fi
+fi
+
+if [ -z "$TU" ] || [ ! -x "$TU" ]; then
+    cat >&2 <<'EOF'
+ERROR: 'tu' CLI not found.
+
+  tooluniverse-min needs the Python 'tooluniverse' package installed AND the
+  cli.py whitelist patch applied (otherwise the whitelist env vars above are
+  ignored and ALL ~2524 tools load). Set it up once:
+
+      bash skills/tooluniverse-min/setup/install-python-deps.sh
+
+  Or, if `tu` lives somewhere non-standard, point at it explicitly:
+
+      TU=/path/to/tu ./scripts/tu-min status
+
+  See skills/tooluniverse-min/README.md for details.
+EOF
+    exit 127
+fi
+
+exec "$TU" "$@"
