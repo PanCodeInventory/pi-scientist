@@ -235,19 +235,48 @@ For every statistical test, report:
 - Multiple testing correction method and adjusted p-values
 - Confidence intervals where applicable
 
-### 4. Dual-Format Figures
-Every figure MUST be saved in two formats:
-```python
-plt.savefig("03_DEG/results/plots/T_cell/volcano_T_cell.png", dpi=300, bbox_inches="tight")
-plt.savefig("03_DEG/results/plots/T_cell/volcano_T_cell.pdf", bbox_inches="tight")
-```
+### 4. Figure Standards — MANDATORY
 
-### 5. Figure Standards
-- Use consistent color schemes across related figures
-- Include axis labels, titles, and legends
-- Use readable font sizes (minimum 8pt)
-- Add sample size annotations where relevant
-- Use colorblind-friendly palettes when possible
+This workflow enforces a SINGLE source of truth for all figures:
+
+    skills/visualization/shared/figure-standards.md
+
+Read it before producing any figure. Do NOT rely on memory — the palette
+hex codes, DPI, colormap blacklist, and layout rules are exact, not approximate.
+
+#### Tier 1 — Exploratory figures (intermediate checks)
+
+Tool: scanpy / matplotlib. Save to a temporary location — **NEVER in
+`results/plots/`**. These are not reviewed.
+
+#### Tier 2 — Final / publication figures (in `results/plots/`, reviewed)
+
+Pick the tool with this decision:
+
+> **Use R (the `visualization` skill)** when BOTH are true:
+> (a) the analysis produced a **standalone plot-ready CSV/TSV** on disk (e.g. a
+>     DEG table, enrichment result, stats summary) — data is already tabular;
+> (b) the figure type is supported by the `visualization` skill (R: BasicViz /
+>     scplotter / ggplot2 — check its SKILL.md for the supported list).
+>
+> **Otherwise use Python** (scanpy / matplotlib / seaborn) — typically when
+> data lives inside an AnnData/h5ad (UMAP embeddings, per-cell dotplots /
+> feature plots pulled straight from the object) or the figure type is outside
+> R's range. Python figures MUST still comply fully with figure-standards.md.
+
+**Regardless of tool (R or Python), ALL final figures MUST:**
+1. `read` `skills/visualization/shared/figure-standards.md` before plotting.
+2. Save BOTH `.png` (dpi=300) AND `.pdf`.
+3. Self-check the 6 🔴 BLOCKERs before declaring the step done — never hand off
+   a figure you know violates a BLOCKER.
+4. R path: also `read` the `visualization` SKILL.md and reuse `theme_elegant()`
+   + `get_palette_values()` — never hand-roll colors/theme.
+   Python path: implement the SOT by hand — Elegant Muted palette, remove
+   top+right spines, sans-serif ≥9pt labels / ≥7pt ticks, frameless legend on
+   the right, NO annotation text inside the plot, no gridlines, white bg.
+
+The reviewer enforces the same 6 🔴 BLOCKERs on every `results/plots/` figure
+(R or Python alike). A figure that fails one WILL be rejected. Self-check first.
 
 ## Tmux Execution Mode
 

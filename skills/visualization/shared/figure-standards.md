@@ -1,111 +1,97 @@
-# Figure Standards
+# Figure Standards — Single Source of Truth
 
-Shared standards for all visualization output from this skill.
+This file is the ONLY authority for figure quality in this workflow.
 
-## File Format & Resolution
+- **Workers** read it before producing any figure that goes into `results/plots/`.
+- **Reviewers** read it before reviewing any figure.
 
-| Content Type | Format | DPI |
-|-------------|--------|-----|
-| Plots, graphs, diagrams | **PDF** (vector, preferred) or **PNG** | 300 |
-| Photos, microscopy, heatmaps | **TIFF** or **PNG** | 300 |
+Both sides reference this same file — never maintain separate standard copies.
 
-**Rules:**
-- Never use JPEG for scientific figures (compression artifacts)
-- Export in PDF for publication; PNG for preview/sharing
-- Embed fonts in PDF output
+## Severity Levels
 
-## Color Palette
+| Level | Meaning | On violation |
+|-------|---------|--------------|
+| 🔴 BLOCKER | Objectively verifiable hard rule | → NEEDS FIX (auto-reject) |
+| 🟡 MAJOR | Important, but judged visually | → PASS WITH CONCERNS, recorded |
 
-**Default: Elegant Muted** — 24 low-saturation, high-contrast colors suitable for multi-cluster scRNA-seq and general categorical data.
+Only 🔴 BLOCKERS trigger NEEDS FIX. 🟡 items are recorded in review notes but do not block.
 
-```
-#4E79A7  #F28E2B  #E15759  #76B7B2  #59A14F  #EDC948
-#B07AA1  #FF9DA7  #9C755F  #BAB0AC  #882E72  #1965B0
-#7BAFDE  #4EB265  #CAE0AB  #F7F056  #EE8026  #DC050C
-#72190E  #4271BD  #984EA3  #FFFF33  #A65628  #F781BF
-```
+## MANDATORY BLOCKERS (🔴 — verify with these commands)
 
-When >24 categories needed, interpolate with `colorRampPalette()` (R); `get_palette_values()` already auto-extends via this method.
+These 6 are objectively verifiable via bash. Any failure ⇒ the figure is rejected.
 
-**Continuous data**: Use `viridis` (default), `plasma`, or `cividis`. Never `jet` or `rainbow`.
+| # | Rule | Check command (run in bash) |
+|---|------|------------------------------|
+| 2 | No JPEG | `file <fig> \| grep -i jpeg` (hit = FAIL) |
+| 3 | Both `.png` and `.pdf` exist | `ls <base>.png <base>.pdf` (missing one = FAIL) |
+| 4 | Raster DPI ≥ 300 | `identify -format "%x %y\n" <fig>` ; fallback `python -c "from PIL import Image; print(Image.open('<fig>').info.get('dpi'))"` |
+| 7 | No `jet`/`rainbow`/`nipy_spectral`/`gist_rainbow` on continuous data | `grep -nEi "cmap[=('\"]+ *(jet\|rainbow\|nipy_spectral\|gist_rainbow)" <script>` (hit = FAIL) |
+| 11 | X AND Y axis labels non-empty | `grep -nE "set_xlabel\|set_ylabel\|labs\(" <script>` (absent/empty = FAIL) |
+| 18 | Top + right spines removed | `grep -nE "spines\['(top\|right)'\].*set_visible\(False\)" <script>` (matplotlib) or R theme removing them |
 
-**Enrichment bubble plots**: Use `YlOrRd` (Yellow → Orange → Red). Low significance = light yellow, high significance = deep red. **Never use diverging colormaps** (`RdBu_r`, `PuOr`, `coolwarm`) for enrichment — the white/light middle segment is invisible against white backgrounds.
+If `identify` is unavailable, use the PIL one-liner; if both unavailable, downgrade rule 4 to 🟡 and note it — never silently pass.
 
-**Diverging data**: Use `RdBu_r` or `PuOr`. Avoid red-green combinations.
+## The 32 Standards
 
-## Typography
+### File Delivery
+1. 🟡 Plots in PDF (vector, preferred) or PNG. Heatmaps/photos may use TIFF.
+2. 🔴 Never JPEG (compression artifacts).
+3. 🔴 Every figure saved as BOTH `.png` and `.pdf`.
+4. 🔴 Raster DPI ≥ 300.
+5. 🟡 Embed fonts in PDF output.
 
-| Element | Spec |
-|---------|------|
-| Font family | Sans-serif (Arial, Helvetica) |
-| Axis labels | 9 pt, sentence case with units: `"Expression (log2 CPM)"` |
-| Tick labels | 7 pt |
-| Title | 10 pt bold |
-| Legend text | 7 pt |
-| Panel labels | 10 pt bold (A, B, C — uppercase for most journals) |
+### Color
+6. 🟡 Continuous data: `viridis` / `plasma` / `cividis`.
+7. 🔴 Continuous data MUST NOT use `jet` / `rainbow` / `nipy_spectral` / `gist_rainbow`.
+8. 🟡 Categorical data: Elegant Muted 24-color palette (interpolate with `colorRampPalette()` when >24):
+   ```
+   #4E79A7  #F28E2B  #E15759  #76B7B2  #59A14F  #EDC948
+   #B07AA1  #FF9DA7  #9C755F  #BAB0AC  #882E72  #1965B0
+   #7BAFDE  #4EB265  #CAE0AB  #F7F056  #EE8026  #DC050C
+   #72190E  #4271BD  #984EA3  #FFFF33  #A65628  #F781BF
+   ```
+9. 🟡 Diverging data: `RdBu_r` or `PuOr`. Avoid red-green combinations.
 
-## Layout
+### Typography
+10. 🟡 Sans-serif font (Arial / Helvetica).
+11. 🔴 X AND Y axes must have text labels with units (non-empty).
+12. 🟡 Axis label font ≥ 9pt.
+13. 🟡 Tick label font ≥ 7pt.
+14. 🟡 Labels in sentence case with units, e.g. `"Expression (log2 CPM)"`.
+15. 🟡 Title 10pt bold.
+16. 🟡 Legend text 7pt.
+17. 🟡 Panel labels (A/B/C) 10pt bold, uppercase.
 
-| Element | Rule |
-|---------|------|
-| Legend | No frame; position = "best" (auto, outside data area if possible) |
-| Spines | Remove top + right; keep left + bottom |
-| Grid | No gridlines unless essential for readability |
-| Multi-panel | Bold labels (A/B/C) in top-left or top-center; consistent sizing across panels |
-| Background | White (`#FFFFFF`), no transparency |
+### Layout
+18. 🔴 Remove top + right spines; keep left + bottom.
+19. 🟡 Legend frameless.
+20. 🟡 Legend positioned to the RIGHT of the main plot, vertically centered. Strictly NO overlap with the plot area.
+21. 🟡 No gridlines unless essential for readability.
+22. 🟡 White background (`#FFFFFF`), no transparency.
+23. 🟡 No chart junk (3D, shadows, excessive decoration).
+24. 🟡 Multi-panel: labels (A/B/C) top-left/top-center, consistent sizing across panels.
 
-## Statistics
+### Dimensions
+25. 🟡 Single column 85mm (3.35") or full page 175mm (6.89").
+26. 🟡 Aspect ratio 4:3 or golden ratio (1.618:1).
 
-- Always include error bars: specify SD, SEM, or 95% CI in figure caption
-- Show individual data points alongside summary statistics when feasible (n < ~200)
-- Significance markers: `*` p<0.05, `**` p<0.01, `***` p<0.001
+### Statistics
+27. 🟡 Statistical figures must have error bars.
+28. 🟡 Error bar type (SD / SEM / 95% CI) stated in caption.
+29. 🟡 Show individual data points when n < 200.
+30. 🟡 Significance markers: `*` p<0.05, `**` p<0.01, `***` p<0.001.
 
-## Figure Dimensions
+### Semantics
+31. 🟡 Figure title is a noun phrase (e.g. "MASH vs Control").
+32. 🟡 NO annotation text inside the plot area. "Annotation text" = data-point labels, gene names, numeric values, p-values, arrow callouts, and similar ADD-ON text. Axis labels, ticks, title, and legend are STRUCTURAL text and are retained.
 
-| Layout | Width (mm) | Width (inches) | Typical height |
-|--------|-----------|----------------|----------------|
-| Single column | 85 | 3.35 | 2.5–3.0" |
-| Full page width | 175 | 6.89 | 4.0–7.0" |
+## Pre-submission Checklist (workers self-run before declaring a step done)
 
-Aspect ratio: 4:3 or golden ratio (1.618:1) recommended.
-
-## Enrichment Bubble Plots
-
-Specific design standards for enrichment analysis (GO/KEGG/Hallmark/Reactome) bubble plots:
-
-| Element | Standard | Rationale |
-|---------|----------|----------|
-| Colormap | `YlOrRd` | Sequential yellow→red, no invisible white middle |
-| Bubble size | Auto-scaled per plot: linear map gene_count → [20, 300] px² | Different gene sets have vastly different size ranges; fixed scale makes small sets invisible or large sets overflow |
-| Edge color | `#555555` (dark gray), width 0.3 | Ensures bubbles visible against white background |
-| Alpha | 0.85–0.9 | Slight transparency for overlapping bubbles |
-| Threshold lines | None | Clean, uncluttered |
-| Legend | Colorbar for single-database plots; database color legend for combined plots; no size legend | Minimal, publication-ready |
-
-**Auto-scaling formula** (map gene counts to a fixed pixel range so small and large sets stay visible):
-```
-MIN_SIZE, MAX_SIZE = 20, 300
-size = MIN_SIZE + (gene_count - count_min) / (count_max - count_min) * (MAX_SIZE - MIN_SIZE)
-```
-In ggplot2, this is `scale_size_continuous(range = c(2, 8))`; in `enrichplot::dotplot`, bubble size is auto-scaled by default — do not override it with a fixed multiplier.
-
-**Common bubble plot layouts**:
-- **Single**: One enrichment database, top 15 terms
-- **Combined**: Multiple databases merged (KEGG=red, Hallmark=orange, GO_BP=teal, Reactome=green), top 20
-- **Matrix**: Up/Down regulation side-by-side for same database, top 15 per direction
-
-**Anti-patterns**:
-- `RdYlBu_r` / `RdBu_r` for enrichment → white middle invisible
-- Fixed `s = gene_count × constant` → bubbles too small for small gene sets, too large for large ones
-- White `edgecolors='white'` → bubbles vanish into background
-- Grey dashed threshold lines → visual clutter with no information gain
-
-## Pre-submission Checklist
-
-- [ ] PDF vector format for plots; 300 DPI for raster
-- [ ] Text ≥7pt at final print size; sans-serif; units in labels
-- [ ] Colorblind-safe palette; interpretable in grayscale
-- [ ] Error bars defined in caption; individual points shown when feasible
-- [ ] Panel labels bold + consistent; legend clear + frameless
-- [ ] No chart junk: no 3D, shadows, excessive gridlines
-- [ ] Fonts embedded in PDF
+- [ ] Saved as BOTH `.png` (300 DPI) and `.pdf`
+- [ ] Not JPEG
+- [ ] No `jet`/`rainbow` on continuous data
+- [ ] X AND Y axes labeled with units
+- [ ] Top + right spines removed
+- [ ] Legend to the right, not overlapping the plot
+- [ ] No annotation text inside plot area
+- [ ] Sans-serif, labels ≥9pt, ticks ≥7pt

@@ -80,21 +80,46 @@ For each `script` file:
 - Correct data transformations
 - Config files match scripts and plan parameters
 
-### 3. Figure Quality (for `figure` files)
-- Use `read` tool to visually inspect PNG/PDF figures
-- **Verify against `skills/visualization/shared/figure-standards.md` checklist:**
-  - [ ] Format: PDF vector or PNG at 300 DPI; no JPEG
-  - [ ] Palette: Elegant Muted or viridis for continuous; no jet/rainbow
-  - [ ] Typography: sans-serif, labels ≥9pt, ticks ≥7pt, units in axis labels
-  - [ ] Spines: top + right removed
-  - [ ] Legend: frameless, positioned outside data area
-  - [ ] Dimensions: single column 85mm or full page 175mm
-  - [ ] Colorblind-safe: interpretable in grayscale
-  - [ ] Error bars present with definition in caption
-  - [ ] No chart junk (3D, shadows, excessive gridlines)
-  - [ ] Fonts embedded in PDF
-  - [ ] Figure caption: a short title (noun phrase) — e.g. "MASH vs Control", "Tumor vs Normal"
-  - [ ] Visual-first content: within the plot area, information is conveyed through graphical encodings (color, shape, size, position, pattern) rather than bare numbers or text annotations; axis labels/ticks on X/Y are the only acceptable text inside the figure
+### 3. Figure Quality (for `figure` files) — HARD GATE
+
+Figures are the most visible output. Do NOT rubber-stamp them. A bad figure
+passing review undermines the entire analysis. This dimension shares the
+HIGHEST priority with Data Provenance — zero tolerance.
+
+**Scope**: review ONLY figures in `results/plots/` (final / publication figures).
+Exploratory figures produced via scanpy/matplotlib outside `results/plots/`
+are NOT reviewed.
+
+**Step 1 — Load the standard:**
+  `read` `skills/visualization/shared/figure-standards.md`. Review ONLY against
+  it — never your personal aesthetic preferences.
+
+**Step 2 — Programmatic checks (run in bash; do NOT eyeball these):**
+For each figure F (e.g. `03_DEG/results/plots/volcano.png`) and its generating
+script S, run the 6 🔴 BLOCKER checks from figure-standards.md:
+  • No JPEG:        `file F | grep -i jpeg`  → hit = 🔴 FAIL
+  • Pair exists:    `ls <base>.png <base>.pdf`  → missing one = 🔴 FAIL
+  • DPI ≥ 300:      `identify -format "%x %y\n" F`  (<300 = 🔴 FAIL);
+                    fallback: `python -c "from PIL import Image; print(Image.open('F').info.get('dpi'))"`
+  • Colormap:       `grep -nEi "cmap[=('\"]+ *(jet|rainbow|nipy_spectral|gist_rainbow)" S`
+                    → hit on continuous data = 🔴 FAIL
+  • Axis labels:    `grep -nE "set_xlabel|set_ylabel|labs\(" S`  → absent/empty = 🔴 FAIL
+  • Spines:         `grep -nE "spines\['(top|right)'\].*set_visible\(False\)" S`
+                    (or R theme removing them) → absent = 🔴 FAIL
+  If `identify` is missing: use the PIL fallback; if both missing, downgrade
+  DPI to 🟡 and note it — do NOT silently pass.
+
+**Step 3 — Visual inspection (`read` the PNG) for the 🟡 MAJOR items:**
+  palette = Elegant Muted / viridis; font ≥9pt labels / ≥7pt ticks; frameless
+  legend on the RIGHT, vertically centered, not overlapping the plot; no
+  gridlines; white background; no 3D / shadows; NO annotation text inside the
+  plot area (no gene names, values, p-values, arrow callouts); title = noun
+  phrase; error bars defined in caption; panel labels (A/B/C) consistent.
+
+**Step 4 — Verdict by severity:**
+  • ANY 🔴 BLOCKER failed → NEEDS FIX. Add a `P_fix` step naming the exact
+    BLOCKER and the fix (e.g. "regenerate as PNG 300dpi — currently JPEG").
+  • Only 🟡 items → PASS WITH CONCERNS; list concerns in review notes.
 
 ### 4. Table Quality (for `table` files)
 - Use `bash` (`head`, `wc -l`) to check table structure
