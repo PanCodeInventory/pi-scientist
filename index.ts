@@ -91,6 +91,47 @@ function extractHandoffJson(output: string): string | null {
 	return null;
 }
 
+function hasUncheckedTodolistItems(planPath: string): boolean | null {
+	let content: string;
+	try {
+		content = fs.readFileSync(planPath, "utf-8");
+	} catch {
+		return null;
+	}
+
+	let inTodolist = false;
+	let sawTodolist = false;
+	for (const line of content.split(/\r?\n/)) {
+		if (/^##\s+Todolist\b/.test(line)) {
+			inTodolist = true;
+			sawTodolist = true;
+			continue;
+		}
+		if (inTodolist && /^##\s+/.test(line)) break;
+		if (inTodolist && /^-\s+\[ \]\s+(?:\*\*[^*]+\*\*|[A-Za-z][\w-]*)\s*:/.test(line)) return true;
+	}
+
+	return sawTodolist ? false : null;
+}
+
+function extractTaskIdFromPlanFile(planFile: string): string {
+	const stem = path.basename(planFile).replace(/\.md$/i, "");
+	const match = stem.match(/^(Task\d+)(?:-\d{8})?$/);
+	return match?.[1] || stem || "TaskN";
+}
+
+function todayYmd(): string {
+	const now = new Date();
+	const yyyy = String(now.getFullYear());
+	const mm = String(now.getMonth() + 1).padStart(2, "0");
+	const dd = String(now.getDate()).padStart(2, "0");
+	return `${yyyy}${mm}${dd}`;
+}
+
+function reportFilenameHint(planFile: string): string {
+	return `Report/${extractTaskIdFromPlanFile(planFile)}-具体内容-${todayYmd()}.html`;
+}
+
 function makeDetails(result: AgentRunResult, output: string): AgentRenderItem {
 	return {
 		agent: result.agent,
@@ -782,13 +823,15 @@ export default function (pi: ExtensionAPI) {
 			"Provide the output from sci_scout as context. The plan MUST include a Methodology section",
 			"with package versions, citations, parameter justification, assumptions, and alternative approaches.",
 			"The plan is saved under Task/ in the user-confirmed analysis parent directory; generated outputs go to sibling module directories like <NN>_ModuleName/, not under Task/.",
+			"Planner must not add a subagent final-report step; it only records a main-agent completion reminder for Report/<TaskID>-<具体内容>-<YYYYMMDD>.html + git commit.",
 			"Use this after scouting and before implementing.",
 		].join(" "),
 		promptSnippet: "Dispatch planner to create analysis plan with methodology for TASK",
 		promptGuidelines: [
 			"ALWAYS use sci_plan after sci_scout to create a methodology-confirmed analysis plan. NEVER implement without a plan.",
 			"Before sci_plan, use ask_user_question to confirm the analysis parent directory that will contain the Task/ plan folder and analysis subdirectories.",
-			"Plans are saved as <workDir>/Task/TaskN-YYYYMMDD.md. Generated outputs must go under module directories like <workDir>/01_Preprocessing/ or <workDir>/<NN>_ModuleName/ (siblings to Task/, not inside Task/).", 
+			"Plans are saved as <workDir>/Task/TaskN-YYYYMMDD.md. Generated outputs must go under module directories like <workDir>/01_Preprocessing/ or <workDir>/<NN>_ModuleName/ (siblings to Task/, not inside Task/).",
+			"Do NOT plan per-module README.md files, 99_Report/, RFINAL, or any report-generation Todolist step. The final report is main-agent only after all steps pass review.",
 			"If scouting returns insufficient context, call sci_scout again with more specific guidance before planning.",
 		],
 		parameters: Type.Object({
@@ -808,7 +851,7 @@ export default function (pi: ExtensionAPI) {
 			const discovery = discoverScientists();
 			const effectiveWorkDir = path.resolve(ctx.cwd, params.workDir);
 			fs.mkdirSync(effectiveWorkDir, { recursive: true });
-			const fullTask = `Create a bioinformatics analysis plan for: ${params.task}\n\nUser-confirmed analysis parent directory: ${effectiveWorkDir}\nPlan location rule: save the persistent task file under the analysis parent directory's Task/ folder (Task/TaskN-YYYYMMDD.md).\nOutput location rule: create/use concrete analysis module directories directly under the analysis parent directory, named like 01_Preprocessing/ or <NN>_ModuleName/, siblings to Task/. Each module must follow: scripts/config/, scripts/stages/, scripts/utils/, results/data/, results/tables/, results/plots/, README.md. Do NOT create a logs/ directory anywhere; script run logs/status produced by tmux go under <Module>/tmux/ (one tmux/manifest.jsonl per module indexes every run). Require every generated script, config, intermediate file, table, figure, report, and result for this analysis to be saved under the relevant module directory, never under Task/. Results must be categorized by file type under results/.\nFigure rule: any step producing a FINAL figure must (a) prefer R via the visualization skill when the data is a plot-ready CSV/TSV and the figure type is R-supported, otherwise use Python compliant with figure-standards.md; (b) list both .png (300 DPI) and .pdf in Output; (c) note compliance with skills/visualization/shared/figure-standards.md. Exploratory figures must NOT go into results/plots/.\n\nContext from scout/librarian/user answers:\n${params.context}`;
+			const fullTask = `Create a bioinformatics analysis plan for: ${params.task}\n\nUser-confirmed analysis parent directory: ${effectiveWorkDir}\nPlan location rule: save the persistent task file under the analysis parent directory's Task/ folder (Task/TaskN-YYYYMMDD.md).\nOutput location rule: create/use concrete analysis module directories directly under the analysis parent directory, named like 01_Preprocessing/ or <NN>_ModuleName/, siblings to Task/. Each module must follow: scripts/config/, scripts/stages/, scripts/utils/, results/data/, results/tables/, results/plots/. Do NOT create README.md or logs/ directories anywhere; script run logs/status produced by tmux go under <Module>/tmux/ (one tmux/manifest.jsonl per module indexes every run). Require every generated script, config, intermediate file, table, figure, and analysis result for this analysis to be saved under the relevant module directory, never under Task/. Results must be categorized by file type under results/.\nFinal report rule: do NOT add RFINAL, 99_Report/, README, or report-generation items to the Todolist. Instead include a Main-Agent Completion Reminder stating that after all Todolist items are [x], the main agent must use/read frontend-design, write the report under Report/<TaskID>-<具体内容>-<YYYYMMDD>.html, then run git commit. TaskID must match the Task file's Task number prefix (e.g. Task/Task3-20260528.md -> Task3); 具体内容 is a short filename-safe summary; date uses YYYYMMDD.\nFigure rule: any step producing a FINAL figure must (a) prefer R via the visualization skill when the data is a plot-ready CSV/TSV and the figure type is R-supported, otherwise use Python compliant with figure-standards.md; (b) list both .png (300 DPI) and .pdf in Output; (c) note compliance with skills/visualization/shared/figure-standards.md. Exploratory figures must NOT go into results/plots/.\n\nContext from scout/librarian/user answers:\n${params.context}`;
 			// Fork mode: planner inherits full conversation context via session fork
 			// Falls back to isolated spawn when no session is available
 			const sessionFile = ctx.sessionManager.getSessionFile();
@@ -883,13 +926,15 @@ export default function (pi: ExtensionAPI) {
 			"then automatically chain a reviewer agent to verify the output and update the plan.",
 			"The worker executes the step but cannot modify the plan file.",
 			"The reviewer inspects the output, marks checkboxes on PASS, or adds fix steps on NEEDS FIX.",
-			"Each call executes ONE step + its review. Call sci_implement repeatedly to progress through the plan.",
+			"Each call executes ONE analysis step + its review. Call sci_implement repeatedly to progress through the plan.",
+			"When all plan steps are checked, the tool reminds the main agent to write Report/<TaskID>-<具体内容>-<YYYYMMDD>.html with frontend-design and then git commit.",
 		].join(" "),
 		promptSnippet: "Dispatch worker+reviewer to execute and verify next plan step",
 		promptGuidelines: [
 			"ALWAYS call sci_implement with the planFile path and cwd/workDir from sci_plan's output. The worker reads the file directly — no need to copy the plan content.",
-			"Each sci_implement call runs worker (execute step) → reviewer (verify + update plan) automatically. Call sci_implement once per step.",
+			"Each sci_implement call runs worker (execute step) → reviewer (verify + update plan) automatically. Call sci_implement once per analysis step.",
 			"If the reviewer reports NEEDS FIX, fix steps have already been added to the plan file. Call sci_implement again to execute them.",
+			"If sci_implement says all Todolist items are checked, stop dispatching subagents: use/read frontend-design, write Report/<TaskID>-<具体内容>-<YYYYMMDD>.html, then git commit.",
 			"If the worker reports ANALYSIS TERMINATED or fails, investigate the issue before re-dispatching.",
 		],
 		parameters: Type.Object({
@@ -900,7 +945,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const discovery = discoverScientists();
 			const effectiveCwd = params.cwd ? path.resolve(ctx.cwd, params.cwd) : ctx.cwd;
-			const fullTask = `Read the plan file at \`${params.planFile}\` and execute the next unchecked step. Effective analysis parent directory: ${effectiveCwd}. The plan file must declare the analysis parent directory, plan file path, and concrete module directory for each step. Follow the methodology and skill specified in that step, and write every generated script/config/result/report under the declared module directory (e.g. <NN>_ModuleName/, sibling to Task/, not inside Task/). DO NOT modify the plan file — the reviewer agent handles plan updates.`;
+			const fullTask = `Read the plan file at \`${params.planFile}\` and execute the next unchecked analysis step. Effective analysis parent directory: ${effectiveCwd}. The plan file must declare the analysis parent directory, plan file path, and concrete module directory for each step. Follow the methodology and skill specified in that step, and write every generated script/config/result under the declared module directory (e.g. <NN>_ModuleName/, sibling to Task/, not inside Task/). Do NOT create README.md files or 99_Report/. DO NOT modify the plan file — the reviewer agent handles plan updates.`;
 
 			// Step 1: Run worker
 			const workerResult = await runAgent(ctx.cwd, discovery.agents, "worker", fullTask, {
@@ -949,6 +994,22 @@ export default function (pi: ExtensionAPI) {
 
 			const reviewOutput = extractOutput(reviewResult);
 
+			const planPath = path.isAbsolute(params.planFile)
+				? params.planFile
+				: path.resolve(effectiveCwd, params.planFile);
+			const uncheckedTodos = reviewResult.exitCode === 0 ? hasUncheckedTodolistItems(planPath) : null;
+			const completionReminder = uncheckedTodos === false
+				? [
+					"",
+					"## Main-Agent Completion Reminder",
+					"All Todolist items in the plan are now checked. Do NOT call another subagent for report generation.",
+					"Next, the main agent must:",
+					"1. Use/read the `frontend-design` skill.",
+					`2. Write the final self-contained Chinese HTML report to \`${reportFilenameHint(params.planFile)}\` (replace \`具体内容\` with a short filename-safe content summary; no README files, no \`99_Report/\`).`,
+					"3. Run `git status`, stage the relevant analysis/report files, and create a git commit.",
+				].join("\n")
+				: "";
+
 			// Combined result
 			const combinedOutput = [
 				`## Worker Output`,
@@ -956,7 +1017,8 @@ export default function (pi: ExtensionAPI) {
 				"",
 				`## Review Output`,
 				reviewOutput || "(no output)",
-			].join("\n");
+				completionReminder,
+			].filter(Boolean).join("\n");
 
 			// Aggregate usage from both agent runs
 			const combinedDetails = makeDetails(workerResult, workerOutput);
@@ -1004,12 +1066,14 @@ export default function (pi: ExtensionAPI) {
 			"  - PASS: marks the checkbox [x] and optionally adds review notes.",
 			"  - NEEDS FIX: adds fix steps to the plan (Todolist + Task Details).",
 			"Note: sci_implement already auto-chains review. Use this standalone tool only for manual re-reviews.",
+			"If the review completes all Todolist items, this tool reminds the main agent to write Report/<TaskID>-<具体内容>-<YYYYMMDD>.html with frontend-design and then git commit.",
 		].join(" "),
 		promptSnippet: "Dispatch reviewer to verify latest step and update plan file",
 		promptGuidelines: [
 			"sci_implement already auto-chains a reviewer after each worker step. You do NOT need to call sci_review separately after sci_implement.",
 			"Use sci_review standalone only for manual re-reviews, e.g. when you want to re-check a previously reviewed step.",
 			"The reviewer updates the plan file directly: marks [x] on PASS, adds fix steps on NEEDS FIX.",
+			"If sci_review says all Todolist items are checked, stop dispatching subagents: use/read frontend-design, write Report/<TaskID>-<具体内容>-<YYYYMMDD>.html, then git commit.",
 		],
 		parameters: Type.Object({
 			planFile: Type.String({ description: "Path to the task document (e.g. Task/Task1-20260528.md). The reviewer reads this file, reviews the latest worker-executed step's outputs, updates the plan file (marks [x] on PASS, adds fix steps on NEEDS FIX)." }),
@@ -1030,10 +1094,23 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			const output = extractOutput(result);
+			const planPath = path.isAbsolute(params.planFile)
+				? params.planFile
+				: path.resolve(effectiveCwd, params.planFile);
+			const uncheckedTodos = result.exitCode === 0 ? hasUncheckedTodolistItems(planPath) : null;
+			const finalOutput = uncheckedTodos === false
+				? [
+					output || "(no output)",
+					"",
+					"## Main-Agent Completion Reminder",
+					"All Todolist items in the plan are now checked. Do NOT call another subagent for report generation.",
+					`Next, the main agent must use/read \`frontend-design\`, write \`${reportFilenameHint(params.planFile)}\` (replace \`具体内容\` with a short filename-safe content summary), then run \`git commit\`.`,
+				].join("\n")
+				: output;
 
 			return {
-				content: [{ type: "text", text: output || "(no output)" }],
-				details: makeDetails(result, output),
+				content: [{ type: "text", text: finalOutput || "(no output)" }],
+				details: makeDetails(result, finalOutput),
 				isError: result.exitCode !== 0,
 			};
 		},
@@ -1107,7 +1184,7 @@ export default function (pi: ExtensionAPI) {
 				tasks.map((t) => {
 					const taskWorkDir = t.cwd ? path.resolve(ctx.cwd, t.cwd) : ctx.cwd;
 					const taskText = t.agent === "planner"
-						? `${t.task}\n\nUser-confirmed analysis parent directory: ${taskWorkDir}\nPlan location rule: save the persistent task file under the analysis parent directory's Task/ folder (Task/TaskN-YYYYMMDD.md).\nOutput location rule: create/use concrete analysis module directories directly under the analysis parent directory, named like 01_Preprocessing/ or <NN>_ModuleName/, siblings to Task/. Each module must follow: scripts/config/, scripts/stages/, scripts/utils/, results/data/, results/tables/, results/plots/, README.md. Do NOT create a logs/ directory anywhere; script run logs/status produced by tmux go under <Module>/tmux/. Require every generated file for this analysis to be saved under the relevant module directory, never under Task/. Results must be categorized by file type under results/.`
+						? `${t.task}\n\nUser-confirmed analysis parent directory: ${taskWorkDir}\nPlan location rule: save the persistent task file under the analysis parent directory's Task/ folder (Task/TaskN-YYYYMMDD.md).\nOutput location rule: create/use concrete analysis module directories directly under the analysis parent directory, named like 01_Preprocessing/ or <NN>_ModuleName/, siblings to Task/. Each module must follow: scripts/config/, scripts/stages/, scripts/utils/, results/data/, results/tables/, results/plots/. Do NOT create README.md or logs/ directories anywhere; script run logs/status produced by tmux go under <Module>/tmux/. Require every generated analysis file for this analysis to be saved under the relevant module directory, never under Task/. Results must be categorized by file type under results/. Final report rule: do NOT add RFINAL, 99_Report/, README, or report-generation items to the Todolist. Instead include a Main-Agent Completion Reminder stating that after all Todolist items are [x], the main agent must use/read frontend-design, write the report under Report/<TaskID>-<具体内容>-<YYYYMMDD>.html, then run git commit. TaskID must match the Task file's Task number prefix (e.g. Task/Task3-20260528.md -> Task3); 具体内容 is a short filename-safe summary; date uses YYYYMMDD.`
 						: t.task;
 					return {
 						agent: t.agent,

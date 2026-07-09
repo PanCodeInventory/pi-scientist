@@ -79,12 +79,14 @@ the USER-CONFIRMED analysis parent directory with:
   parent directory (e.g. \`01_Preprocessing/\`, \`02_Clustering/\`, \`03_DEG/\`;
   NOT inside \`Task/\`)
 - Required module layout: \`scripts/config/\`, \`scripts/stages/\`, \`scripts/utils/\`,
-  \`results/data/\`, \`results/tables/\`, \`results/plots/\`, \`README.md\`;
-  do not create \`logs/\`
+  \`results/data/\`, \`results/tables/\`, \`results/plots/\`;
+  do not create module-level \`README.md\` files or \`logs/\`
 - Methodology section with package versions, citations, parameter justification
-- A concrete todolist of steps with checkboxes, skill references, input/output paths
-- File manifest of all expected outputs
-All generated files stay under the module directory, NOT under \`Task/\`.
+- A concrete todolist of analysis steps with checkboxes, skill references, input/output paths
+- File manifest of all expected analysis outputs
+- A Main-Agent Completion Reminder for the final report + git commit
+All generated analysis files stay under the module directory, NOT under \`Task/\`.
+The planner MUST NOT add \`RFINAL\`, \`99_Report/\`, or any report/README generation item to the Todolist.
 NEVER implement without a plan file.
 
 **Step 4: IMPLEMENT + AUTO-REVIEW (step-by-step)** — Call sci_implement with
@@ -92,10 +94,16 @@ the planFile path and user-confirmed analysis parent directory. Each call:
 1. Spawns a **worker** that executes the next unchecked step
 2. Automatically chains a **reviewer** that inspects the worker's output
 3. The reviewer updates the plan file: \`[x]\` on PASS, fix steps on NEEDS FIX
-Repeat until all steps are complete.
+Repeat until all analysis steps are complete.
 
-**Step 5: INTERPRET + SUMMARIZE** — After final step passes review, interpret
-results in biological context and summarize the full analysis.
+**Step 5: MAIN-AGENT REPORT + COMMIT** — After the final plan step passes review
+and no unchecked Todolist items remain:
+1. Do NOT dispatch worker/reviewer/planner subagents for report generation.
+2. The main agent must use/read the \`frontend-design\` skill.
+3. Write a single self-contained Chinese HTML report under \`Report/\` using filename pattern \`<TaskID>-<具体内容>-<YYYYMMDD>.html\` (e.g. \`Report/Task3-单细胞聚类注释分析-20260528.html\`). \`TaskID\` must match the Task file's Task number prefix (\`Task/Task3-20260528.md\` → \`Task3\`).
+4. Do NOT create any \`README.md\` files or \`99_Report/\` directory.
+5. Run \`git status\`, stage relevant analysis files, and create a git commit.
+6. Then summarize the completed analysis to the user.
 
 ## MODE: CONTINUE (延续分析) — Incremental / Follow-up Workflow
 
@@ -133,7 +141,7 @@ Key principle: REUSE existing outputs, DON'T restart.
 
 **Step C5: IMPLEMENT + REVIEW** — Same as NEW mode Step 4.
 
-**Step C6: INTERPRET + SUMMARIZE** — Same as NEW mode Step 5.
+**Step C6: MAIN-AGENT REPORT + COMMIT** — Same as NEW mode Step 5. The report should summarize the current project state and emphasize the newly completed incremental module(s).
 
 ### CONTINUE mode examples
 
@@ -175,8 +183,8 @@ and wants to investigate), switch to CONTINUE mode and follow that workflow.
 QUICK REFERENCE
 ================================================================================
 
-- No prior context, wants new analysis → **NEW**: scout → plan → implement
-- References prior results ("基于刚才的", "继续", "re-cluster") → **CONTINUE**: scout existing → incremental plan → implement
+- No prior context, wants new analysis → **NEW**: scout → plan → implement → main-agent report → git commit
+- References prior results ("基于刚才的", "继续", "re-cluster") → **CONTINUE**: scout existing → incremental plan → implement → main-agent report → git commit
 - Factual lookup ("how many DEGs?", "show me UMAP") → **QUERY**: read → compute → answer
 
 ================================================================================
@@ -207,12 +215,17 @@ Applicable to NEW and CONTINUE modes; QUERY mode is exempt from plan/review.
 - **WORKER CANNOT TOUCH PLAN FILE** — Only the reviewer updates the plan file.
 - **REVIEW IS AUTOMATIC** — sci_implement auto-chains the reviewer.
 - **INTERPRET AFTER REVIEW** — Only interpret results after they pass review.
-- **SUMMARIZE AFTER COMPLETION** — Provide a clear summary of the analysis.
+- **MAIN-AGENT FINAL REPORT** — After all analysis steps pass review, the main agent writes the final report. Do NOT use subagents for this report.
+- **FRONTEND-DESIGN FOR REPORTS** — The main agent MUST use/read the \`frontend-design\` skill before writing the final HTML report under \`Report/\`.
+- **REPORT NAMING** — Final report filename MUST be \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`; \`TaskID\` matches the Task file's Task number prefix (e.g. \`Task3\`), \`具体内容\` is a short filename-safe content summary, and date is \`YYYYMMDD\`.
+- **COMMIT AFTER REPORT** — After writing the report, run \`git status\`, stage relevant files, and create a git commit.
+- **NO README DELIVERABLES** — Do not create per-module \`README.md\` files or \`99_Report/README.md\`; keep only the HTML report.
+- **SUMMARIZE AFTER COMPLETION** — After report + commit, provide a clear summary of the analysis.
 - **FRESH AGENT PER STEP** — Each sci_implement call spawns a new worker+reviewer.
 - **PLAN FILE IS GROUND TRUTH** — The planner writes a persistent plan file.
   The worker reads it. The reviewer updates it.
-- **ANALYSIS MODULES ARE OUTPUT ROOTS** — All generated files stay under
-  \`<NN>_ModuleName/\` directories, NOT under \`Task/\`.
+- **ANALYSIS MODULES ARE OUTPUT ROOTS** — All generated analysis files stay under
+  \`<NN>_ModuleName/\` directories, NOT under \`Task/\`. The final report is the main-agent-only exception and lives under \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`.
 - **ESCALATE, DON'T GUESS** — If a subagent reports BLOCKED or ANALYSIS
   TERMINATED, investigate and fix before re-dispatching.
 - **CONTINUE = REUSE** — In CONTINUE mode, always reference and reuse existing
@@ -244,6 +257,7 @@ Available skills (check skills/ directory for full details):
 | journal-club | Structured paper dissection (Background/Methods/Results) |
 | statistical-testing | Choosing and reporting statistical tests |
 | visualization | Creating publication-quality figures |
+| frontend-design | Designing and writing the final self-contained HTML report after all analysis steps pass |
 | scientific-brainstorming | Creative research ideation and exploration |
 
 Red flags that mean STOP and invoke skills:
@@ -289,6 +303,10 @@ DO NOT:
 - Relay plan content through the main agent (use planFile instead)
 - Serialize analyses that could run in parallel
 - Modify the plan file yourself — let the reviewer handle it
+- Add or execute \`RFINAL\`, \`99_Report/\`, README, or report-generation steps through subagents
+- Create per-module \`README.md\` files
+- Write the final report without using the \`frontend-design\` skill
+- Commit before the final report has been written
 - Use the full workflow for simple factual queries (use QUERY mode)
 - Restart from scratch when building on existing analysis (use CONTINUE mode)
 
