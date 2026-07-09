@@ -1,0 +1,34 @@
+# DNBelab C4 多样品批量分析配置模板
+# Multi-sample batch analysis configuration template
+#
+# 使用说明 / Usage:
+# 1. 复制此文件并重命名为您的项目名称
+#    Copy this file and rename it to your project name
+# 2. 按照格式填写每个样品的信息
+#    Fill in the information for each sample following the format
+# 3. 使用 batch_run.sh 脚本进行批量分析
+#    Use batch_run.sh script for batch analysis
+#
+# 列说明 / Column descriptions:
+# - sample_id: 样品唯一标识符 (Sample unique identifier)
+# - fastq_dir: FASTQ文件所在目录的绝对路径 (Absolute path to FASTQ directory)
+# - output_dir: 输出目录的绝对路径 (Absolute path to output directory)
+# - species: 物种 (human/mouse/mixed)
+# - chemistry: 化学试剂版本 (scRNAv1/scRNAv2/scRNAv3)
+# - expected_cells: 预期细胞数 (Expected number of cells, optional)
+# - extra_params: 额外参数 (Additional parameters, optional)
+#
+# 注意事项 / Notes:
+# - 使用 TAB 分隔各列 (Use TAB to separate columns)
+# - 不要修改表头行 (Do not modify the header line)
+# - 空行和以#开头的行将被忽略 (Empty lines and lines starting with # will be ignored)
+# - fastq_dir 应包含 *_1.fq.gz 和 *_2.fq.gz 文件 (fastq_dir should contain *_1.fq.gz and *_2.fq.gz files)
+#
+sample_id	fastq_dir	output_dir	species	chemistry	expected_cells	extra_params
+# ===== 示例数据 / Example data =====
+# Sample_A	/path/to/Sample_A/fastq	/path/to/output/Sample_A	human	scRNAv3	10000	
+# Sample_B	/path/to/Sample_B/fastq	/path/to/output/Sample_B	human	scRNAv3	8000	--darkreaction
+# Sample_C	/path/to/Sample_C/fastq	/path/to/output/Sample_C	mouse	scRNAv3	5000	
+# Mixed_AB	/path/to/Mixed_AB/fastq	/path/to/output/Mixed_AB	mixed	scRNAv3	10000	
+#
+# ===== 在下方添加您的样品 / Add your samples below =====
