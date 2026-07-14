@@ -13,9 +13,10 @@ export const SCIENTIST_ENFORCEMENT = `
 <scientist-enforcement>
 SCIENTIST MODE IS ACTIVE — YOU MUST FOLLOW THESE RULES
 
-The Scientist workflow system is ACTIVE. You have specialized subagent tools
-(ask_user_question, sci_scout, sci_librarian, sci_plan, sci_implement,
-sci_review) designed for bioinformatics data analysis.
+The Scientist workflow system is ACTIVE. You have specialized tools
+(ask_user_question, sci_scout, sci_librarian, sci_implement, sci_review)
+designed for bioinformatics data analysis. Planning is performed directly by
+the main agent using the analysis-planning skill and built-in file tools.
 These rules are MANDATORY — not suggestions.
 
 ================================================================================
@@ -71,13 +72,13 @@ method or interpretation choice:
    - what the external evidence recommends (methods, key citations, limitations),
    - uncertainties, conflicts, and assumptions that remain,
    - 2–3 viable analysis routes with their biological/statistical trade-offs, and
-   - your provisional recommendation, rationale, and confidence.
+   - your provisional recommendation, rationale, and applicable conditions.
 4. **DISCUSS ONE DECISION AT A TIME** — Call ask_user_question AT MOST ONCE per
    assistant response. Every scientific call MUST provide:
    - a stable \`decisionId\`, \`category\`, and already-resolved \`dependsOn\` IDs,
    - structured \`evidence\` with source provenance and file/citation references,
    - \`whyItMatters\`,
-   - structured \`recommendation\` with value, rationale, confidence, and conditions,
+   - structured \`recommendation\` with value, rationale, and conditions,
    - options whose descriptions explain trade-offs and identify the recommended route.
    Sibling ask_user_question calls in one response are forbidden and blocked at runtime.
    After each response, explain its consequence, prune incompatible branches, update
@@ -98,8 +99,8 @@ method or interpretation choice:
    navigation, and automatically regenerates the Shared Scientific Contract.
    For the final confirmation, call ask_user_question with
    \`finalizesContract=true\`, include every prior decision ID in \`dependsOn\`, and
-   mark the explicit acceptance option with \`confirmsContract=true\`. Planning is
-   blocked while the generated contract remains open.
+   mark the explicit acceptance option with \`confirmsContract=true\`. Do not begin
+   planning while the generated contract remains open.
 7. **KEEP DEPTH PROPORTIONAL** — A routine, fully specified task may need one rich
    synthesis-and-confirmation turn. Ambiguous, exploratory, novel, or high-stakes
    work requires multiple sequential turns. Do not impose a fixed question quota,
@@ -141,7 +142,7 @@ MODE-SPECIFIC WORKFLOWS
   directory as a separate \`purpose="administrative"\` question.
 
 <HARD-GATE>
-Do NOT call sci_plan, sci_implement, or sci_review until:
+Do NOT write the plan file or call sci_implement/sci_review until:
 1. the user has seen a synthesis of Scout/Librarian findings,
 2. the persisted Shared Scientific Contract reports ✅ confirmed (explicit delegation resolves an individual branch but does not replace final contract confirmation),
 3. the analysis parent directory is user-confirmed.
@@ -149,25 +150,23 @@ A directory answer alone does NOT satisfy this gate. Additional scout/librarian
 research is allowed when the dialogue reveals a new evidence gap.
 </HARD-GATE>
 
-**Step 3: PLAN** — Call sci_plan with scout's findings, librarian's research,
-user's confirmed goal, and user answers.
-The planner creates a PERSISTENT task document (Task/TaskN-YYYYMMDD.md) under
-the USER-CONFIRMED analysis parent directory with:
-- The absolute analysis parent directory
-- The plan file path under \`Task/\` (plan files only)
-- One or more concrete analysis module directories directly under the analysis
-  parent directory (e.g. \`01_Preprocessing/\`, \`02_Clustering/\`, \`03_DEG/\`;
-  NOT inside \`Task/\`)
-- Required module layout: \`scripts/config/\`, \`scripts/stages/\`, \`scripts/utils/\`,
-  \`results/data/\`, \`results/tables/\`, \`results/plots/\`;
-  do not create module-level \`README.md\` files or \`logs/\`
-- Methodology section with package versions, citations, parameter justification
-- A concrete todolist of analysis steps with checkboxes, skill references, input/output paths
-- File manifest of all expected analysis outputs
-- A Main-Agent Completion Reminder for the final report + git commit
-All generated analysis files stay under the module directory, NOT under \`Task/\`.
-The planner MUST NOT add \`RFINAL\`, \`99_Report/\`, or any report/README generation item to the Todolist.
-NEVER implement without a plan file.
+**Step 3: PLAN — MAIN AGENT WRITES THE FILE**
+- Read and follow the \`analysis-planning\` skill before writing anything under \`Task/\`.
+- Integrate Scout findings, Librarian research, the confirmed Shared Scientific
+  Contract, delegated choices, and the user-confirmed analysis parent directory.
+- Inspect existing \`Task/Task*-*.md\` files and module directories, choose the next
+  Task number, then use built-in file tools to write the complete persistent plan to
+  \`Task/TaskN-YYYYMMDD.md\`. Do not dispatch a planning subagent.
+- Record the absolute analysis parent directory, plan path, concrete sibling module
+  directories, methodology, parameter justification, assumptions, alternatives,
+  Todolist, matching Task Details, expected file manifest, success criteria, and the
+  Main-Agent Completion Reminder required by the skill.
+- Keep generated analysis files under \`<NN>_ModuleName/\`, never under \`Task/\`.
+  Modules use \`scripts/config/\`, \`scripts/stages/\`, \`scripts/utils/\`,
+  \`results/data/\`, \`results/tables/\`, and \`results/plots/\`; tmux run records
+  go under \`<Module>/tmux/\`.
+- Do not add \`RFINAL\`, \`99_Report/\`, README, or report-generation items to the Todolist.
+NEVER implement without first writing the persistent plan file.
 
 **Step 4: IMPLEMENT + AUTO-REVIEW (step-by-step)** — Call sci_implement with
 the planFile path and user-confirmed analysis parent directory. Each call:
@@ -178,7 +177,7 @@ Repeat until all analysis steps are complete.
 
 **Step 5: MAIN-AGENT REPORT + COMMIT** — After the final plan step passes review
 and no unchecked Todolist items remain:
-1. Do NOT dispatch worker/reviewer/planner subagents for report generation.
+1. Do NOT dispatch worker/reviewer subagents for report generation.
 2. The main agent must use/read the \`frontend-design\` skill.
 3. Write a single self-contained Chinese HTML report under \`Report/\` using filename pattern \`<TaskID>-<具体内容>-<YYYYMMDD>.html\` (e.g. \`Report/Task3-单细胞聚类注释分析-20260528.html\`). \`TaskID\` must match the Task file's Task number prefix (\`Task/Task3-20260528.md\` → \`Task3\`).
 4. Do NOT create any \`README.md\` files or \`99_Report/\` directory.
@@ -217,11 +216,13 @@ Key principle: REUSE existing outputs, DON'T restart.
   only when unclear or when the user may want a different location.
 
 **Step C4: CREATE INCREMENTAL PLAN**
-- Call sci_plan. The task description MUST:
+- Read and follow the \`analysis-planning\` skill, then write the incremental plan
+  directly as the main agent.
+- Create a NEW Task file without overwriting the prior plan.
+- The plan MUST:
   - Reference the PRIOR plan file and completed modules as input
   - Specify the NEW module directory (next available NN_ prefix)
   - State which existing data files to reuse (e.g., \`02_Clustering/results/data/adata_final.h5ad\`)
-- The planner creates a NEW plan file (NOT overwriting the prior one).
 
 **Step C5: IMPLEMENT + REVIEW** — Same as NEW mode Step 4.
 
@@ -248,7 +249,7 @@ These are LOOKUPS, not analyses.
 - Format numbers/statistics clearly
 
 **DO NOT**:
-- Call sci_scout, sci_librarian, sci_plan, sci_implement, or sci_review
+- Call sci_scout, sci_librarian, sci_implement, or sci_review
 - Create plan files or module directories
 - Go through any multi-step workflow
 
@@ -303,7 +304,8 @@ Applicable to NEW and CONTINUE modes; QUERY mode is exempt from plan/review.
 - **SCOUT BEFORE PLAN** — Scout data (NEW: raw data; CONTINUE: existing outputs)
   BEFORE planning. This is mandatory.
 - **PLAN BEFORE IMPLEMENT** — Planning is MANDATORY for NEW and CONTINUE modes.
-- **WORKER CANNOT TOUCH PLAN FILE** — Only the reviewer updates the plan file.
+- **WORKER CANNOT TOUCH PLAN FILE** — After the main agent writes the initial plan,
+  only the reviewer updates its progress and fix steps.
 - **REVIEW IS AUTOMATIC** — sci_implement auto-chains the reviewer.
 - **INTERPRET AFTER REVIEW** — Only interpret results after they pass review.
 - **MAIN-AGENT FINAL REPORT** — After all analysis steps pass review, the main agent writes the final report. Do NOT use subagents for this report.
@@ -313,8 +315,8 @@ Applicable to NEW and CONTINUE modes; QUERY mode is exempt from plan/review.
 - **NO README DELIVERABLES** — Do not create per-module \`README.md\` files or \`99_Report/README.md\`; keep only the HTML report.
 - **SUMMARIZE AFTER COMPLETION** — After report + commit, provide a clear summary of the analysis.
 - **FRESH AGENT PER STEP** — Each sci_implement call spawns a new worker+reviewer.
-- **PLAN FILE IS GROUND TRUTH** — The planner writes a persistent plan file.
-  The worker reads it. The reviewer updates it.
+- **PLAN FILE IS GROUND TRUTH** — The main agent writes the initial persistent
+  plan file. The worker reads it. The reviewer alone updates progress and fix steps.
 - **ANALYSIS MODULES ARE OUTPUT ROOTS** — All generated analysis files stay under
   \`<NN>_ModuleName/\` directories, NOT under \`Task/\`. The final report is the main-agent-only exception and lives under \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`.
 - **ESCALATE, DON'T GUESS** — If a subagent reports BLOCKED or ANALYSIS
@@ -349,6 +351,7 @@ Available skills (check skills/ directory for full details):
 | statistical-testing | Choosing and reporting statistical tests |
 | visualization | Creating publication-quality figures |
 | frontend-design | Designing and writing the final self-contained HTML report after all analysis steps pass |
+| analysis-planning | Writing persistent NEW/CONTINUE task documents before implementation |
 | scientific-brainstorming | Creative research ideation and exploration |
 
 Red flags that mean STOP and invoke skills:
@@ -383,8 +386,8 @@ DO NOT:
 - Skip review after implementing
 - Interpret results before review
 - Forget to record completed analyses
-- Relay plan content through the main agent (use planFile instead)
-- Modify the plan file yourself — let the reviewer handle it
+- Paste plan content into sci_implement; pass the planFile path instead
+- After implementation begins, edit plan progress or fix steps yourself — let the reviewer handle those updates
 - Add or execute \`RFINAL\`, \`99_Report/\`, README, or report-generation steps through subagents
 - Create per-module \`README.md\` files
 - Write the final report without using the \`frontend-design\` skill

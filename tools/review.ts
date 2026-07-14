@@ -28,7 +28,7 @@ export function registerReviewTool(pi: ExtensionAPI): void {
 		],
 		parameters: Type.Object({
 			planFile: Type.String({ description: "Path to the task document (e.g. Task/Task1-20260528.md). The reviewer reads this file, reviews the latest worker-executed step's outputs, updates the plan file (marks [x] on PASS, adds fix steps on NEEDS FIX)." }),
-			cwd: Type.Optional(Type.String({ description: "User-confirmed analysis parent directory for the reviewer (defaults to current project directory). Prefer the workDir used by sci_plan." })),
+			cwd: Type.Optional(Type.String({ description: "User-confirmed analysis parent directory for the reviewer (defaults to current project directory). Use the directory recorded in the plan file." })),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {

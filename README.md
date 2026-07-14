@@ -24,7 +24,7 @@
 
 Scientist 用三条规则解决上面的问题。
 
-**方法先于代码。** 不先定下用什么方法、为什么用这个方法、参数怎么选——就不写第一行代码。Planner Agent 会生成一个持久化的计划文件，写明每步的包版本、参数依据、假设条件和备选方案。这份计划会被 Worker 和 Reviewer 反复引用，而不是写完就被遗忘。
+**方法先于代码。** 不先定下用什么方法、为什么用这个方法、参数怎么选——就不写第一行代码。主 Agent 在科学讨论完成后读取 `analysis-planning` Skill，直接生成持久化计划文件，写明每步的包版本、参数依据、假设条件和备选方案。这份计划会被 Worker 和 Reviewer 反复引用，而不是写完就被遗忘。
 
 **数据不可伪造。** Worker Agent 的系统提示里有一个独立章节，措辞不留余地：禁止编造、模拟或随机生成任何数据。如果 Worker 无法从声明好的输入文件里加载真实数据，它必须直接终止，报告 `ANALYSIS TERMINATED`。没有例外。
 
@@ -32,31 +32,28 @@ Scientist 用三条规则解决上面的问题。
 
 ---
 
-## 五个 Agent
+## 主 Agent + 四个专用子 Agent
 
-单个大 Agent 同时背负"快完成任务"和"确保统计正确"这两个目标时，会走捷径。我试过，结果是它选择前者。
-
-所以拆成了五个：
+单个 Agent 同时负责调查、执行和审查时容易走捷径，因此 Scientist 仍把证据收集、代码执行和结果审查交给四个隔离的专用子 Agent。规划需要完整理解对话和 Shared Scientific Contract，直接由主 Agent 完成。
 
 ```
 ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-│  SCOUT   │  │LIBRARIAN │  │ PLANNER  │  │  WORKER  │  │ REVIEWER │
-│ 检查数据  │  │ 研究方法  │  │ 制定计划  │  │ 执行步骤  │  │ 审查输出  │
+│  SCOUT   │  │LIBRARIAN │  │MAIN AGENT│  │  WORKER  │  │ REVIEWER │
+│ 检查数据  │  │ 研究方法  │  │讨论+计划  │  │ 执行步骤  │  │ 审查输出  │
 ├──────────┤  ├──────────┤  ├──────────┤  ├──────────┤  ├──────────┤
 │ read/ls  │  │ pubmed   │  │ read     │  │ read/write│  │ read     │
 │ grep     │  │ context7 │  │ write    │  │ edit      │  │ grep     │
-│ find/bash│  │ webreader│  │ grep/find│  │ bash      │  │ ls/bash  │
-│          │  │          │  │ ls       │  │工具宇宙    │  │ (只读)   │
+│ find/bash│  │ webreader│  │ bash     │  │ bash      │  │ ls/bash  │
+│          │  │          │  │ Skill    │  │工具宇宙    │  │ (只读)   │
 └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘
 ```
 
-默认模型由 `agents/*.md` 的 frontmatter 定义：
+四个子 Agent 的默认模型由 `agents/*.md` 的 frontmatter 定义；主 Agent 使用当前 pi 会话选择的模型：
 
 | Agent | 默认模型 | 环境变量覆盖 |
 |-------|----------|--------------|
 | Scout | `commandcode/deepseek/deepseek-v4-flash` | `SCIENTIST_MODEL_SCOUT` |
 | Librarian | `commandcode/MiniMaxAI/MiniMax-M3` | `SCIENTIST_MODEL_LIBRARIAN` |
-| Planner | `zai-coding-cn/glm-5.2:xhigh` | `SCIENTIST_MODEL_PLANNER` |
 | Worker | `openai-codex/gpt-5.6-terra` | `SCIENTIST_MODEL_WORKER` |
 | Reviewer | `openai-codex/gpt-5.6-sol:xhigh` | `SCIENTIST_MODEL_REVIEWER` |
 
@@ -66,7 +63,7 @@ Scientist 用三条规则解决上面的问题。
 SCIENTIST_MODEL_WORKER=anthropic/claude-sonnet-4-5 pi
 ```
 
-每个 Agent 配不同的系统提示、不同的工具集、不同的模型。Scout 只需要 `read` 和 `ls`，给它 bash 反而分散注意力。Reviewer 有 bash 但被限制为只读——它不能编辑分析文件，只能检查和写 Plan File。这种最小权限设计的目的不在安全，而在注意力：不该 Agent 碰的工具就不要出现在它的工具列表里，省得它分心。
+每个子 Agent 配不同的系统提示、工具集和模型。Scout 只需要 `read` 和 `ls`，给它 bash 反而分散注意力。Reviewer 有 bash 但被限制为只读——它不能编辑分析文件，只能检查并更新 Plan File。这种最小权限设计的目的不在安全，而在注意力。主 Agent 则保留完整上下文，在进入 PLAN 阶段时读取 `analysis-planning` Skill 并直接写计划。
 
 ### Plan File：分析的地面真相
 
@@ -103,21 +100,11 @@ Worker 读取计划、执行步骤、产出文件。它不能编辑计划文件�
 
 这样一来，Plan File 上的 `[x]` 就不只是"执行了"——它同时还意味着"审过了"。
 
-### Spawn 和 Fork：两种上下文继承
+### 子 Agent 隔离，规划留在主会话
 
-多数子 Agent 用 **Spawn** 模式：启动一个独立的 pi 进程，只传入任务描述和 Agent 自己的系统提示。Worker 不需要知道用户最开始说了什么，它只需要知道这一步的参数和目标。
+Scout、Librarian、Worker 和 Reviewer 都使用 **Spawn** 模式：启动独立 pi 进程，只接收当前任务和各自的系统提示。Worker 不需要知道用户最开始说了什么，只需要读取计划文件中当前步骤的参数和目标。
 
-Planner 是例外。它需要综合数据格式、用户意图、Librarian 推荐的方法——这些信息散落在对话历史的不同位置。如果只给一段任务描述，要么信息不全，要么描述长到难以处理。
-
-所以 Planner 用 **Fork**：直接分支当前会话，继承完整的对话历史，再叠加 Planner 自己的系统提示。
-
-```typescript
-// runner.ts
-args.push("--fork", sessionFile);           // 继承全部对话
-args.push("--append-system-prompt", path);  // 叠加 Planner 系统提示
-```
-
-Spawn 提供干净上下文给执行型 Agent，Fork 提供完整上下文给决策型 Agent。
+规划不同。它需要综合用户意图、Scout 数据勘察、Librarian 方法证据和持续更新的 Shared Scientific Contract。这些信息已经完整存在于主会话，因此不再 Fork 独立的规划子 Agent；主 Agent 直接读取 `analysis-planning` Skill，并把计划写入 `Task/TaskN-YYYYMMDD.md`。这样既减少一次模型调用，也避免复制整段会话上下文。
 
 ---
 
@@ -188,7 +175,7 @@ FAIL 那一列里，P01 没有被勾选，但末尾追加了 `P01_fix1`。下一
 
 三种模式，主 Agent 根据用户请求自动选择。
 
-**NEW（新分析）**：从原始数据开始。Scout 查数据 → Librarian 查方法 → **主 Agent 与用户进行科学讨论并形成共同科学约定** → Planner 写计划 → Worker + Reviewer 逐步推进。
+**NEW（新分析）**：从原始数据开始。Scout 查数据 → Librarian 查方法 → **主 Agent 与用户进行科学讨论并形成共同科学约定** → 主 Agent 写计划 → Worker + Reviewer 逐步推进。
 
 **CONTINUE（追加分析）**：基于已完成的分析加新模块。Scout 只扫已有产出，不重扫原始数据；如果新增分析涉及重要的方法或解释选择，主 Agent 先和用户讨论清楚。新计划明确声明对已有文件的依赖——Worker 直接读，不重新执行前置步骤。
 
@@ -210,7 +197,7 @@ Librarian
   → 用户确认主要生物学问题、实验单位、比较组、批次处理和解释边界
   → 形成 Shared Scientific Contract；最后单独确认分析目录
 
-Planner
+主 Agent（读取 analysis-planning Skill）
   → Task1-20260609.md
   → 模块: 01_Preprocessing, 02_Clustering, 03_Annotation, 04_DEG
 
@@ -222,7 +209,7 @@ sci_implement × N
   P04 DEG        → [x]
 ```
 
-### 为什么在 Planner 前增加科学讨论
+### 为什么在规划前增加科学讨论
 
 Scout 和 Librarian 返回后，Agent 掌握的信息通常显著多于用户：数据维度、重复结构、质量信号、方法比较、文献证据都可能只存在于折叠的工具输出中。如果这时只问一句“输出到哪个目录”，用户实际上没有参与分析设计。
 
@@ -233,16 +220,16 @@ Scientist 现在把 `ask_user_question` 作为科学对话工具，而不只是�
 - **`decisionId/category/dependsOn`**：稳定标识当前分支及其上游依赖；
 - **`evidence[]`**：逐条区分 Scout、Librarian、数据、代码、文献、用户信息和 Agent 推断，并记录文件字段、PMID/DOI 等来源；
 - **`whyItMatters`**：说明选择如何改变统计有效性或生物学解释；
-- **`recommendation`**：包含推荐值、理由、信心和适用条件；
+- **`recommendation`**：包含推荐值、理由和适用条件；
 - **备选路线**：逐项说明科学后果，并在界面中标记推荐项。
 
 提问前还会先判断答案是否能从数据、代码、计划文件、包文档或文献中查到。能查到的内容由 Agent 自己调查，不把检索工作推给用户；只询问科学意图、材料中不存在的领域知识、价值判断和真正需要用户参与的选择。
 
 不仅是“一次调用问一个问题”，现在还在运行时强制**每个 assistant turn 最多调用一次** `ask_user_question`。如果模型预先生成多个问题，后续调用会被阻止。模型必须先读取答案、解释影响并剪枝，然后才能在新一轮生成下一问。
 
-科学问题在 TUI 中使用专用界面：证据、重要性、推荐方案、信心、适用条件和候选路线同时可见；长证据可用 `E` 展开；自定义答案在同一界面内编辑，不再丢失上下文，空答案不能提交。
+科学问题在 TUI 中使用专用界面：**问题置顶醒目呈现**，随后依次是推荐方案、为什么重要、背景，以及按来源（数据/代码/计划/文献等）分组、默认折叠的证据；长证据可用 `E` 展开/收起；自定义答案在同一界面内编辑，不再丢失上下文，空答案不能提交。界面不再展示抽象的“信心/置信度”，只给出一个明确的推荐即可。
 
-每次回答都会把紧凑的增量决策事件保存在 tool result `details` 中（不重复存整段 briefing/Contract），可随会话 reload、fork 和 tree 分支恢复。插件据此自动重建并生成 **Shared Scientific Contract**；使用 `/science-contract` 可随时查看。最终确认必须覆盖全部已有决策分支并显式选择确认选项，之后才能进入 Planner。分析目录使用 `purpose="administrative"` 单独询问，不进入科学约定。
+每次回答都会把紧凑的增量决策事件保存在 tool result `details` 中（不重复存整段 briefing/Contract），可随会话 reload、fork 和 tree 分支恢复。插件据此自动重建并生成 **Shared Scientific Contract**；使用 `/science-contract` 可随时查看。最终确认必须覆盖全部已有决策分支并显式选择确认选项，之后主 Agent 才能写计划。分析目录使用 `purpose="administrative"` 单独询问，不进入科学约定。
 
 ---
 
@@ -254,8 +241,8 @@ extensions/scientist/
 ├── commands.ts       # /reflect 命令
 ├── dialogue.ts       # 科学决策树、持久化 Contract 与交互式问答 UI
 ├── enforcement.ts    # 注入到 System Prompt 的规则
-├── prompts.ts        # Planner/Worker/Reviewer 的统一任务规则
-├── runner.ts         # Spawn / Fork 子进程执行引擎
+├── prompts.ts        # Worker/Reviewer 的统一任务规则
+├── runner.ts         # Spawn 子进程执行引擎
 ├── agents.ts         # 从 agents/*.md 加载 Agent 配置与模型覆盖
 ├── tools/            # 各分析工具的注册与实现
 │   ├── index.ts
@@ -263,17 +250,16 @@ extensions/scientist/
 │   ├── scout.ts
 │   ├── librarian.ts
 │   ├── pubmed.ts
-│   ├── plan.ts
 │   ├── implement.ts
 │   ├── review.ts
 │   └── logs.ts
-├── agents/           # 5 个 Agent 的规格文档
+├── agents/           # 4 个专用子 Agent 的规格文档
 │   ├── scout.md
 │   ├── librarian.md
-│   ├── planner.md
 │   ├── worker.md
 │   └── reviewer.md
-└── skills/           # 14 个领域 Skill
+└── skills/           # 领域 Skill 与主 Agent 规划规范
+    ├── analysis-planning/      # 主 Agent 计划撰写规范
     ├── scanpy-prep/             # 单细胞预处理
     ├── scanpy-cluster/          # 降维聚类
     ├── scanpy-annotate/         # 细胞注释
@@ -364,7 +350,7 @@ cluster 3 的 top 10 marker gene 是什么
 
 四个设计选择：
 
-1. 一个 Agent 只做一件事。Scout 看数据，Librarian 查资料，Planner 定计划，Worker 写代码，Reviewer 审结果。不混用。
+1. 职责分离。Scout 看数据，Librarian 查资料，主 Agent 结合完整对话制定计划，Worker 写代码，Reviewer 独立审结果。
 2. 计划落到文件系统。对话历史不可靠，Markdown 文件可靠。每一步的规格、输入、输出、参数都写在计划文件里。
 3. 审查不通过不等于完成。Worker 产出只是半程，Reviewer 打勾才是终点。
 4. Skill 是硬规范。Skill 文件里包含了经过验证的参数建议、代码模板和审查标准。Agent 不需要凭训练记忆猜测怎么做——读 Skill 就能拿到确定的方案。

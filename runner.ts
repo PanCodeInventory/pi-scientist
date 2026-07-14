@@ -1,8 +1,8 @@
 /**
  * Core agent runner — spawns a pi process for a given agent and captures output.
  *
- * Each scientist subagent tool (sci_scout, sci_plan, sci_implement, sci_review)
- * uses this as the underlying execution engine. It handles:
+ * Scientist subagent tools (sci_scout, sci_librarian, sci_implement, sci_review)
+ * use this as the underlying execution engine. It handles:
  * - Agent discovery and validation
  * - Temp file writing for agent system prompts
  * - Process spawning with JSON mode
@@ -317,26 +317,6 @@ export async function runAgent(
 	const args = ["--mode", "json", "-p", "--no-session"];
 	if (agent.model) args.push("--model", agent.model);
 	if (agent.tools?.length) args.push("--tools", agent.tools.join(","));
-	return spawnPiAgent(cwd, agent, task, args, options);
-}
-
-/**
- * Forks the current session so the subagent inherits the full conversation.
- * Fork mode intentionally keeps the forked session's full tool set.
- */
-export async function runAgentFork(
-	sessionFile: string,
-	cwd: string,
-	agents: AgentConfig[],
-	agentName: string,
-	task: string,
-	options?: AgentRunOptions,
-): Promise<AgentRunResult> {
-	const agent = agents.find((candidate) => candidate.name === agentName);
-	if (!agent) return unknownAgentResult(agents, agentName, task);
-
-	const args = ["--mode", "json", "-p", "--fork", sessionFile];
-	if (agent.model) args.push("--model", agent.model);
 	return spawnPiAgent(cwd, agent, task, args, options);
 }
 

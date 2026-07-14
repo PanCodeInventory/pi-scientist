@@ -1,25 +1,5 @@
 import * as path from "node:path";
 
-/**
- * Canonical planner rules. Keep workflow layout and deliverable policy here so
- * every planner invocation receives the same instructions.
- */
-export const PLANNER_LAYOUT_RULES = [
-	"Plan location rule: save the persistent task file under the analysis parent directory's Task/ folder (Task/TaskN-YYYYMMDD.md).",
-	"Output location rule: create/use concrete analysis module directories directly under the analysis parent directory, named like 01_Preprocessing/ or <NN>_ModuleName/, siblings to Task/. Each module must follow: scripts/config/, scripts/stages/, scripts/utils/, results/data/, results/tables/, results/plots/. Do NOT create README.md or logs/ directories anywhere; script run logs/status produced by tmux go under <Module>/tmux/ (one tmux/manifest.jsonl per module indexes every run). Require every generated script, config, intermediate file, table, figure, and analysis result for this analysis to be saved under the relevant module directory, never under Task/. Results must be categorized by file type under results/.",
-	"Final report rule: do NOT add RFINAL, 99_Report/, README, or report-generation items to the Todolist. Instead include a Main-Agent Completion Reminder stating that after all Todolist items are [x], the main agent must use/read frontend-design, write the report under Report/<TaskID>-<具体内容>-<YYYYMMDD>.html, then run git commit. TaskID must match the Task file's Task number prefix (e.g. Task/Task3-20260528.md -> Task3); 具体内容 is a short filename-safe summary; date uses YYYYMMDD.",
-	"Figure rule: any step producing a FINAL figure must (a) prefer R via the visualization skill when the data is a plot-ready CSV/TSV and the figure type is R-supported, otherwise use Python compliant with figure-standards.md; (b) list both .png (300 DPI) and .pdf in Output; (c) note compliance with skills/visualization/shared/figure-standards.md. Exploratory figures must NOT go into results/plots/.",
-].join("\n");
-
-export function buildPlannerTask(task: string, workDir: string, context: string): string {
-	return [
-		`Create a bioinformatics analysis plan for: ${task}`,
-		`User-confirmed analysis parent directory: ${workDir}`,
-		PLANNER_LAYOUT_RULES,
-		`Context from scout/librarian/user answers:\n${context}`,
-	].join("\n\n");
-}
-
 export function buildWorkerTask(planFile: string, workDir: string): string {
 	return `Read the plan file at \`${planFile}\` and execute the next unchecked analysis step. Effective analysis parent directory: ${workDir}. The plan file must declare the analysis parent directory, plan file path, and concrete module directory for each step. Follow the methodology and skill specified in that step, and write every generated script/config/result under the declared module directory (e.g. <NN>_ModuleName/, sibling to Task/, not inside Task/). Do NOT create README.md files or 99_Report/. DO NOT modify the plan file — the reviewer agent handles plan updates.`;
 }

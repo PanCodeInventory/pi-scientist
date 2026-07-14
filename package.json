@@ -1,7 +1,7 @@
 {
   "name": "@panchongshi/pi-scientist",
   "version": "1.0.0",
-  "description": "Bioinformatics workflow extension for pi coding agent — Scout→Librarian→Think→Plan→Implement→Review pipeline with specialized bioinformatics subagents",
+  "description": "Bioinformatics workflow extension for pi coding agent — Scout→Librarian→Think→Main-Agent Plan→Implement→Review pipeline",
   "type": "module",
   "keywords": [
     "pi-package"

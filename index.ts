@@ -22,7 +22,6 @@ const SCI_TOOLS = [
 	"ask_user_question",
 	"sci_scout",
 	"sci_librarian",
-	"sci_plan",
 	"sci_implement",
 	"sci_review",
 	"sci_logs",

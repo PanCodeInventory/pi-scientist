@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -5,7 +6,7 @@ import { Type } from "typebox";
 import { discoverScientists } from "../agents.js";
 import { buildCompletionReminder, buildReviewTask, buildWorkerTask } from "../prompts.js";
 import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../runner.js";
-import { extractHandoffJson, extractOutput, hasUncheckedTodolistItems, makeDetails } from "./shared.js";
+import { extractHandoffJson, extractOutput, hasUncheckedTodolistItems, makeDetails, stubDetails } from "./shared.js";
 
 export function registerImplementTool(pi: ExtensionAPI): void {
 	pi.registerTool({
@@ -21,20 +22,31 @@ export function registerImplementTool(pi: ExtensionAPI): void {
 		].join(" "),
 		promptSnippet: "Dispatch worker+reviewer to execute and verify next plan step",
 		promptGuidelines: [
-			"ALWAYS call sci_implement with the planFile path and cwd/workDir from sci_plan's output. The worker reads the file directly — no need to copy the plan content.",
+			"Call sci_implement with the planFile path written by the main agent and the analysis parent directory recorded in that plan. The worker reads the file directly — do not copy the plan content into the tool call.",
 			"Each sci_implement call runs worker (execute step) → reviewer (verify + update plan) automatically. Call sci_implement once per analysis step.",
 			"If the reviewer reports NEEDS FIX, fix steps have already been added to the plan file. Call sci_implement again to execute them.",
 			"If sci_implement says all Todolist items are checked, stop dispatching subagents: use/read frontend-design, write Report/<TaskID>-<具体内容>-<YYYYMMDD>.html, then git commit.",
 			"If the worker reports ANALYSIS TERMINATED or fails, investigate the issue before re-dispatching.",
 		],
 		parameters: Type.Object({
-			planFile: Type.String({ description: "Path to the plan file created by sci_plan (e.g. Task/Task1-20260528.md). The worker reads this file to find its next task." }),
-			cwd: Type.Optional(Type.String({ description: "User-confirmed analysis parent directory for the worker (defaults to current project directory). Prefer the workDir used by sci_plan." })),
+			planFile: Type.String({ description: "Path to the plan file written by the main agent (e.g. Task/Task1-20260528.md). The worker reads this file to find its next task." }),
+			cwd: Type.Optional(Type.String({ description: "User-confirmed analysis parent directory for the worker (defaults to current project directory). Use the directory recorded in the plan file." })),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const discovery = discoverScientists();
 			const effectiveCwd = params.cwd ? path.resolve(ctx.cwd, params.cwd) : ctx.cwd;
+			const planPath = path.isAbsolute(params.planFile)
+				? params.planFile
+				: path.resolve(effectiveCwd, params.planFile);
+			if (!fs.existsSync(planPath)) {
+				return {
+					content: [{ type: "text", text: `Plan file not found: ${planPath}. Write the persistent plan file before calling sci_implement.` }],
+					details: stubDetails("worker", `Read plan file at ${planPath}`),
+					isError: true,
+				};
+			}
+
+			const discovery = discoverScientists();
 			const fullTask = buildWorkerTask(params.planFile, effectiveCwd);
 
 			// Step 1: Run worker
@@ -86,9 +98,6 @@ export function registerImplementTool(pi: ExtensionAPI): void {
 
 			const reviewOutput = extractOutput(reviewResult);
 
-			const planPath = path.isAbsolute(params.planFile)
-				? params.planFile
-				: path.resolve(effectiveCwd, params.planFile);
 			const uncheckedTodos = reviewResult.exitCode === 0 ? hasUncheckedTodolistItems(planPath) : null;
 			const completionReminder = uncheckedTodos === false
 				? buildCompletionReminder(params.planFile)

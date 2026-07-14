@@ -28,7 +28,6 @@ const DECISION_CATEGORIES = [
 type AskUserPurpose = "scientific" | "administrative";
 type DecisionCategory = (typeof DECISION_CATEGORIES)[number];
 type EvidenceSource = "scout" | "librarian" | "data" | "code" | "plan" | "literature" | "user" | "inference";
-type Confidence = "low" | "medium" | "high";
 type ResolutionKind = "user_choice" | "accepted_recommendation" | "delegated" | "deferred";
 
 interface EvidenceItem {
@@ -41,7 +40,6 @@ interface ScientificRecommendation {
 	value: string;
 	label?: string;
 	rationale: string;
-	confidence: Confidence;
 	conditions?: string;
 }
 
@@ -123,11 +121,39 @@ const RESOLUTION_LABELS: Record<ResolutionKind, string> = {
 	deferred: "有意延后",
 };
 
+const EVIDENCE_SOURCE_LABELS: Record<EvidenceSource, string> = {
+	data: "数据",
+	code: "代码",
+	plan: "计划",
+	scout: "勘察",
+	librarian: "文献检索",
+	literature: "文献",
+	user: "用户",
+	inference: "推断",
+};
+
+// Stable display order so evidence from the same provenance clusters together.
+const EVIDENCE_SOURCE_ORDER: EvidenceSource[] = [
+	"data", "code", "plan", "scout", "librarian", "literature", "user", "inference",
+];
+
+function groupEvidence(evidence: EvidenceItem[]): Array<{ source: EvidenceSource; items: EvidenceItem[] }> {
+	const groups = new Map<EvidenceSource, EvidenceItem[]>();
+	for (const item of evidence) {
+		const arr = groups.get(item.source);
+		if (arr) arr.push(item);
+		else groups.set(item.source, [item]);
+	}
+	return EVIDENCE_SOURCE_ORDER
+		.filter((source) => groups.has(source))
+		.map((source) => ({ source, items: groups.get(source)! }));
+}
+
 const EvidenceSchema = Type.Object({
 	source: StringEnum(["scout", "librarian", "data", "code", "plan", "literature", "user", "inference"] as const, {
 		description: "Evidence provenance. Use inference only for conclusions derived by the main agent.",
 	}),
-	claim: Type.String({ description: "Concrete fact or evidence relevant to this decision", maxLength: 1_200 }),
+	claim: Type.String({ description: "One atomic fact relevant to this decision. Do not restate the source name; the provenance tag conveys it.", maxLength: 1_200 }),
 	reference: Type.Optional(Type.String({ description: "File/field, PMID/DOI, URL, plan section, or tool output reference", maxLength: 500 })),
 });
 
@@ -135,7 +161,6 @@ const RecommendationSchema = Type.Object({
 	value: Type.String({ description: "Machine-readable recommended answer; match an option value when possible", maxLength: 300 }),
 	label: Type.Optional(Type.String({ description: "Human-readable recommended answer", maxLength: 300 })),
 	rationale: Type.String({ description: "Why this is the recommended answer for the current evidence", maxLength: 1_500 }),
-	confidence: StringEnum(["low", "medium", "high"] as const, { description: "Confidence in the recommendation" }),
 	conditions: Type.Optional(Type.String({ description: "Conditions under which the recommendation holds or should change", maxLength: 1_000 })),
 });
 
@@ -151,7 +176,7 @@ const AskUserOptionSchema = Type.Object({
 });
 
 const AskUserQuestionSchema = Type.Object({
-	question: Type.String({ description: "Exactly one question to show to the user", maxLength: 1_000 }),
+	question: Type.String({ description: "Exactly one self-contained question naming the concrete choice to make. Must be understandable without reading the evidence.", maxLength: 1_000 }),
 	purpose: Type.Optional(StringEnum(["scientific", "administrative"] as const, {
 		description: "Default: scientific. Use administrative only for paths or other non-scientific logistics.",
 		default: "scientific",
@@ -167,7 +192,7 @@ const AskUserQuestionSchema = Type.Object({
 	})),
 	briefing: Type.Optional(Type.String({ description: "Optional concise synthesis. Do not repeat the full evidence list.", maxLength: 2_000 })),
 	evidence: Type.Optional(Type.Array(EvidenceSchema, {
-		description: "Structured evidence supporting the question and recommendation. Required and non-empty for scientific questions.",
+		description: "Structured evidence supporting the question and recommendation. Required and non-empty for scientific questions. Keep it concise: 2-5 decisive, deduplicated items grouped by provenance.",
 		minItems: 1,
 		maxItems: 12,
 	})),
@@ -251,14 +276,17 @@ function generateScientificContract(state: ScientificContractState): string {
 		for (const decision of categoryDecisions) {
 			const evidenceSummary = decision.evidence
 				.slice(0, 4)
-				.map((item) => item.reference ? `${item.claim} [${item.reference}]` : item.claim)
+				.map((item) => {
+					const body = item.reference ? `${item.claim} [${item.reference}]` : item.claim;
+					return `${EVIDENCE_SOURCE_LABELS[item.source]}：${body}`;
+				})
 				.join("；");
 			lines.push(
 				`- **${decision.id}**：${decision.answer}`,
 				`  - 问题：${decision.question}`,
 				`  - 决策方式：${RESOLUTION_LABELS[decision.resolution]}`,
 				`  - 为什么重要：${decision.whyItMatters}`,
-				`  - 推荐：${decision.recommendation.label ?? decision.recommendation.value}（${decision.recommendation.confidence}）— ${decision.recommendation.rationale}`,
+				`  - 推荐：${decision.recommendation.label ?? decision.recommendation.value} — ${decision.recommendation.rationale}`,
 			);
 			if (decision.recommendation.conditions) lines.push(`  - 推荐适用条件：${decision.recommendation.conditions}`);
 			if (decision.dependsOn.length > 0) lines.push(`  - 依赖：${decision.dependsOn.join(", ")}`);
@@ -274,8 +302,15 @@ function generateScientificContract(state: ScientificContractState): string {
 		: `${contract.slice(0, MAX_CONTRACT_CHARS)}\n\n[Contract truncated at ${MAX_CONTRACT_CHARS} characters]`;
 }
 
-function formatEvidence(item: EvidenceItem): string {
-	return item.reference ? `${item.claim}（${item.reference}）` : item.claim;
+function formatEvidenceGrouped(evidence: EvidenceItem[]): string {
+	return groupEvidence(evidence)
+		.map(({ source, items }) => {
+			const body = items
+				.map((item) => item.reference ? `  • ${item.claim}（${item.reference}）` : `  • ${item.claim}`)
+				.join("\n");
+			return `${EVIDENCE_SOURCE_LABELS[source]}\n${body}`;
+		})
+		.join("\n");
 }
 
 function formatPlainQuestion(params: {
@@ -286,15 +321,16 @@ function formatPlainQuestion(params: {
 	recommendation?: ScientificRecommendation;
 }): string {
 	const sections: string[] = [];
-	if (params.briefing?.trim()) sections.push(`科学背景\n${params.briefing.trim()}`);
-	if (params.evidence?.length) sections.push(`证据\n${params.evidence.map((item) => `• ${formatEvidence(item)}`).join("\n")}`);
-	if (params.whyItMatters?.trim()) sections.push(`为什么重要\n${params.whyItMatters.trim()}`);
+	// Lead with the decision itself so the question is unambiguous.
+	sections.push(`需要你决定\n${params.question.trim()}`);
 	if (params.recommendation) {
 		const recommendation = params.recommendation;
 		const conditions = recommendation.conditions ? `\n适用条件：${recommendation.conditions}` : "";
-		sections.push(`当前建议（${recommendation.confidence}）\n${recommendation.label ?? recommendation.value}：${recommendation.rationale}${conditions}`);
+		sections.push(`推荐\n${recommendation.label ?? recommendation.value}：${recommendation.rationale}${conditions}`);
 	}
-	sections.push(`需要你决定\n${params.question.trim()}`);
+	if (params.whyItMatters?.trim()) sections.push(`为什么重要\n${params.whyItMatters.trim()}`);
+	if (params.briefing?.trim()) sections.push(`背景\n${params.briefing.trim()}`);
+	if (params.evidence?.length) sections.push(`证据\n${formatEvidenceGrouped(params.evidence)}`);
 	return sections.join("\n\n");
 }
 
@@ -371,7 +407,7 @@ async function showScientificDialog(
 	return await ctx.ui.custom<DialogSelection | null>((tui, theme, keybindings, done) => {
 		let selectedIndex = 0;
 		let editMode = options.length === 0;
-		let evidenceExpanded = params.evidence.length <= 4;
+		let evidenceExpanded = params.evidence.length <= 3;
 		let validationMessage = "";
 		let focused = false;
 
@@ -489,8 +525,25 @@ async function showScientificDialog(
 			}
 
 			lines.push(theme.fg("accent", "─".repeat(renderWidth)));
-			addWrapped(theme.fg("accent", theme.bold(`科学决策 · ${CATEGORY_LABELS[params.category]}`)), " ");
-			addWrapped(theme.fg("dim", `ID: ${params.decisionId}`), " ");
+			addWrapped(theme.fg("dim", `科学决策 · ${CATEGORY_LABELS[params.category]} · ${params.decisionId}`), " ");
+
+			// 1) The question leads, rendered prominently so it is never ambiguous.
+			lines.push("");
+			addWrapped(theme.fg("accent", theme.bold(params.question.trim())), theme.fg("accent", "❯ "));
+
+			// 2) The actionable recommendation comes next.
+			lines.push("");
+			addWrapped(theme.fg("success", theme.bold("推荐")), " ");
+			addWrapped(theme.fg("text", params.recommendation.label ?? params.recommendation.value), "   ");
+			addWrapped(theme.fg("muted", params.recommendation.rationale), "   ");
+			if (params.recommendation.conditions) addWrapped(theme.fg("dim", `适用条件：${params.recommendation.conditions}`), "   ");
+
+			// 3) Why it matters.
+			lines.push("");
+			addWrapped(theme.fg("muted", "为什么重要"), " ");
+			addWrapped(theme.fg("text", params.whyItMatters), "   ");
+
+			// 4) Supporting context, kept collapsed and grouped by provenance for readability.
 			if (params.briefing?.trim()) {
 				lines.push("");
 				addWrapped(theme.fg("muted", "背景"), " ");
@@ -498,26 +551,25 @@ async function showScientificDialog(
 			}
 
 			lines.push("");
-			addWrapped(theme.fg("muted", `证据 ${evidenceExpanded ? "" : `(显示 4/${params.evidence.length})`}`), " ");
-			const evidence = evidenceExpanded ? params.evidence : params.evidence.slice(0, 4);
-			for (const item of evidence) {
-				addWrapped(theme.fg("text", formatEvidence(item)), theme.fg("accent", " • "));
+			const totalEvidence = params.evidence.length;
+			addWrapped(theme.fg("muted", `证据（${totalEvidence}）`), " ");
+			const limit = evidenceExpanded ? Number.POSITIVE_INFINITY : 3;
+			let shown = 0;
+			for (const group of groupEvidence(params.evidence)) {
+				if (shown >= limit) break;
+				addWrapped(theme.fg("toolTitle", EVIDENCE_SOURCE_LABELS[group.source]), "   ");
+				for (const item of group.items) {
+					if (shown >= limit) break;
+					const body = item.reference ? `${item.claim}（${item.reference}）` : item.claim;
+					addWrapped(theme.fg("text", body), theme.fg("accent", "     • "));
+					shown++;
+				}
 			}
-			if (!evidenceExpanded && params.evidence.length > 4) addWrapped(theme.fg("dim", "按 E 展开全部证据"), "   ");
+			if (!evidenceExpanded && totalEvidence > shown) addWrapped(theme.fg("dim", `还有 ${totalEvidence - shown} 条证据 · 按 E 展开`), "   ");
+			else if (evidenceExpanded && totalEvidence > 3) addWrapped(theme.fg("dim", "按 E 收起"), "   ");
 
 			lines.push("");
-			addWrapped(theme.fg("muted", "为什么重要"), " ");
-			addWrapped(theme.fg("text", params.whyItMatters), "   ");
-
-			lines.push("");
-			addWrapped(theme.fg("accent", theme.bold(`当前建议 · ${params.recommendation.confidence}`)), " ");
-			addWrapped(theme.fg("text", params.recommendation.label ?? params.recommendation.value), "   ");
-			addWrapped(theme.fg("muted", params.recommendation.rationale), "   ");
-			if (params.recommendation.conditions) addWrapped(theme.fg("dim", `适用条件：${params.recommendation.conditions}`), "   ");
-
-			lines.push("");
-			addWrapped(theme.fg("text", theme.bold(params.question)), " ");
-			lines.push("");
+			addWrapped(theme.fg("muted", "请选择"), " ");
 
 			for (let i = 0; i < options.length; i++) {
 				const option = options[i];
@@ -694,12 +746,6 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 		askCallsThisTurn = 0;
 	});
 	pi.on("tool_call", async (event) => {
-		if (event.toolName === "sci_plan" && !contractConfirmed) {
-			return {
-				block: true,
-				reason: "Shared Scientific Contract is still open. Resolve remaining branches and complete an explicit finalizesContract confirmation before planning.",
-			};
-		}
 		if (event.toolName !== ASK_TOOL_NAME) return;
 		askCallsThisTurn++;
 		if (askCallsThisTurn > 1) {
@@ -724,7 +770,7 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 		label: "Scientific Decision",
 		description: [
 			"Resolve exactly one user-owned decision branch and return the answer.",
-			"Scientific questions require a stable decision ID/category/dependencies, structured evidence with provenance, why the decision matters, and a structured recommended answer with confidence.",
+			"Scientific questions require a stable decision ID/category/dependencies, structured evidence with provenance, why the decision matters, and a clear recommended answer.",
 			"Inspect files/code/docs/literature instead of asking discoverable factual questions.",
 			"Call this tool at most once per assistant turn; after the answer, explain its consequence, prune the decision tree, then ask the next dependency in a new turn.",
 			"Decision state persists in tool-result details across reloads and branches, and each scientific answer returns an automatically generated Shared Scientific Contract.",
@@ -734,7 +780,9 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 		promptGuidelines: [
 			"Call ask_user_question at most ONCE in each assistant response. Never emit sibling ask_user_question calls; later questions must be generated only after reading the prior answer.",
 			"Before ask_user_question, inspect files, code, plans, documentation, or literature when they can answer the candidate question. Ask only for user intent, unavailable domain knowledge, value judgments, or genuine choices.",
-			"For every scientific call, provide decisionId, category, resolved dependsOn IDs, structured evidence with provenance, whyItMatters, and recommendation {value, rationale, confidence, conditions}. Missing fields are rejected.",
+			"For every scientific call, provide decisionId, category, resolved dependsOn IDs, structured evidence with provenance, whyItMatters, and recommendation {value, rationale, conditions}. Missing fields are rejected.",
+			"The question must be ONE self-contained sentence that names the exact choice being made (e.g. '主对比组应选 A vs B 还是 A vs C？'). Do not rely on the evidence or briefing to make the question intelligible.",
+			"Keep evidence tidy: one atomic fact per item, no duplicates, and let the source tag carry the provenance instead of restating it in the claim. Prefer 2-5 decisive items over exhaustive lists.",
 			"Walk upstream-to-downstream dependencies. After each answer, explain the scientific consequence and update/prune the remaining decision tree before asking again.",
 			"Option descriptions must explain scientific/statistical trade-offs. Match the recommended option to recommendation.value and include a delegated option when the user may reasonably say '按你的建议'.",
 			"Use finalizesContract=true only for the final confirmation question. Its dependsOn must include every prior decision ID and its acceptance option must set confirmsContract=true.",
@@ -752,7 +800,6 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 					value: input.recommendation,
 					label: input.recommendation,
 					rationale: input.recommendation,
-					confidence: "medium",
 				};
 			}
 			if (!Array.isArray(input.evidence) && typeof input.briefing === "string" && input.briefing.trim()) {
@@ -893,7 +940,7 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 			text += `\n  ${theme.fg("muted", question)}`;
 			const recommendation = args.recommendation as ScientificRecommendation | string | undefined;
 			if (recommendation && typeof recommendation === "object") {
-				text += `\n  ${theme.fg("accent", `建议: ${recommendation.label ?? recommendation.value} (${recommendation.confidence})`)}`;
+				text += `\n  ${theme.fg("accent", `推荐: ${recommendation.label ?? recommendation.value}`)}`;
 			}
 			return new Text(text, 0, 0);
 		},

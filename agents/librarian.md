@@ -148,7 +148,7 @@ Brief summary of what was researched and why.
 2. Suggested follow-up experiments or validations
 3. Key references to cite in the discussion/results section
 
-## Recommendations for Planner
+## Recommendations for Main-Agent Planning
 1. Specific tool + version to use
 2. Statistical test + parameters
 3. Quality thresholds
