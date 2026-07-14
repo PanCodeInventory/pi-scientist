@@ -60,6 +60,22 @@ export interface AgentDiscoveryResult {
 	agents: AgentConfig[];
 }
 
+/**
+ * Resolve an agent model without requiring source edits for another provider.
+ * Example: SCIENTIST_MODEL_WORKER=openai/gpt-5.4
+ */
+export function resolveAgentModel(agentName: string, frontmatterModel?: string): string | undefined {
+	const envSuffix = agentName.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase();
+	const agentOverride = process.env[`SCIENTIST_MODEL_${envSuffix}`]?.trim();
+	if (agentOverride) return agentOverride;
+
+	const configuredModel = frontmatterModel?.trim();
+	if (configuredModel) return configuredModel;
+
+	const defaultModel = process.env.SCIENTIST_MODEL_DEFAULT?.trim();
+	return defaultModel || undefined;
+}
+
 function loadAgentsFromDir(dir: string): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
@@ -101,7 +117,7 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 			name: frontmatter.name,
 			description: frontmatter.description,
 			tools: tools && tools.length > 0 ? tools : undefined,
-			model: frontmatter.model,
+			model: resolveAgentModel(frontmatter.name, frontmatter.model),
 			systemPrompt: body,
 			source: "user",
 			filePath,

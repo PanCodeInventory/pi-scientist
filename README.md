@@ -47,9 +47,23 @@ Scientist 用三条规则解决上面的问题。
 │ grep     │  │ context7 │  │ write    │  │ edit      │  │ grep     │
 │ find/bash│  │ webreader│  │ grep/find│  │ bash      │  │ ls/bash  │
 │          │  │          │  │ ls       │  │工具宇宙    │  │ (只读)   │
-├──────────┤  ├──────────┤  ├──────────┤  ├──────────┤  ├──────────┤
-│deepseek  │  │deepseek  │  │ glm-5.1  │  │ glm-5.1  │  │kimi-k2.6 │
 └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘
+```
+
+默认模型由 `agents/*.md` 的 frontmatter 定义：
+
+| Agent | 默认模型 | 环境变量覆盖 |
+|-------|----------|--------------|
+| Scout | `commandcode/deepseek/deepseek-v4-flash` | `SCIENTIST_MODEL_SCOUT` |
+| Librarian | `commandcode/MiniMaxAI/MiniMax-M3` | `SCIENTIST_MODEL_LIBRARIAN` |
+| Planner | `zai-coding-cn/glm-5.2:xhigh` | `SCIENTIST_MODEL_PLANNER` |
+| Worker | `openai-codex/gpt-5.6-terra` | `SCIENTIST_MODEL_WORKER` |
+| Reviewer | `openai-codex/gpt-5.6-sol:xhigh` | `SCIENTIST_MODEL_REVIEWER` |
+
+单 Agent 环境变量优先于 frontmatter；未配置 frontmatter 时使用 `SCIENTIST_MODEL_DEFAULT`，仍未配置则交给 pi 选择默认模型。例如：
+
+```bash
+SCIENTIST_MODEL_WORKER=anthropic/claude-sonnet-4-5 pi
 ```
 
 每个 Agent 配不同的系统提示、不同的工具集、不同的模型。Scout 只需要 `read` 和 `ls`，给它 bash 反而分散注意力。Reviewer 有 bash 但被限制为只读——它不能编辑分析文件，只能检查和写 Plan File。这种最小权限设计的目的不在安全，而在注意力：不该 Agent 碰的工具就不要出现在它的工具列表里，省得它分心。
@@ -174,9 +188,9 @@ FAIL 那一列里，P01 没有被勾选，但末尾追加了 `P01_fix1`。下一
 
 三种模式，主 Agent 根据用户请求自动选择。
 
-**NEW（新分析）**：从原始数据开始。Scout 查数据 → Librarian 查方法 → 确认用户目录和目标 → Planner 写计划 → Worker + Reviewer 逐步推进。
+**NEW（新分析）**：从原始数据开始。Scout 查数据 → Librarian 查方法 → **主 Agent 与用户进行科学讨论并形成共同科学约定** → Planner 写计划 → Worker + Reviewer 逐步推进。
 
-**CONTINUE（追加分析）**：基于已完成的分析加新模块。Scout 只扫已有产出，不重扫原始数据。新计划明确声明对已有文件的依赖——Worker 直接读，不重新执行前置步骤。
+**CONTINUE（追加分析）**：基于已完成的分析加新模块。Scout 只扫已有产出，不重扫原始数据；如果新增分析涉及重要的方法或解释选择，主 Agent 先和用户讨论清楚。新计划明确声明对已有文件的依赖——Worker 直接读，不重新执行前置步骤。
 
 **QUERY（快速查询）**：问一个具体数值或查一个结果。主 Agent 直接读文件回答，不调用任何子 Agent。
 
@@ -189,7 +203,12 @@ Scout
   → h5ad, 50,000 × 30,000, 3 条件 × 3 重复
 
 Librarian
-  → scanpy 1.10, Wilcoxon + Bonferroni, Wolf et al. 2018
+  → scanpy 1.10, pseudobulk/Wilcoxon 的适用边界、Wolf et al. 2018
+
+科学讨论（逐问逐答）
+  → 主 Agent 先展示数据设计、文献依据、候选路线和自己的建议
+  → 用户确认主要生物学问题、实验单位、比较组、批次处理和解释边界
+  → 形成 Shared Scientific Contract；最后单独确认分析目录
 
 Planner
   → Task1-20260609.md
@@ -203,16 +222,51 @@ sci_implement × N
   P04 DEG        → [x]
 ```
 
+### 为什么在 Planner 前增加科学讨论
+
+Scout 和 Librarian 返回后，Agent 掌握的信息通常显著多于用户：数据维度、重复结构、质量信号、方法比较、文献证据都可能只存在于折叠的工具输出中。如果这时只问一句“输出到哪个目录”，用户实际上没有参与分析设计。
+
+Scientist 现在把 `ask_user_question` 作为科学对话工具，而不只是澄清工具。对话借鉴了 `grill-me` 的三个关键原则：先建立有依赖关系的决策树、一次解决一个分支、每个问题都给出 Agent 的推荐答案。同时保留 Scientist 自己的限制：不为“追问”而追问，深度由科学风险和剩余不确定性决定。
+
+每个科学问题现在都是一个结构化决策节点：
+
+- **`decisionId/category/dependsOn`**：稳定标识当前分支及其上游依赖；
+- **`evidence[]`**：逐条区分 Scout、Librarian、数据、代码、文献、用户信息和 Agent 推断，并记录文件字段、PMID/DOI 等来源；
+- **`whyItMatters`**：说明选择如何改变统计有效性或生物学解释；
+- **`recommendation`**：包含推荐值、理由、信心和适用条件；
+- **备选路线**：逐项说明科学后果，并在界面中标记推荐项。
+
+提问前还会先判断答案是否能从数据、代码、计划文件、包文档或文献中查到。能查到的内容由 Agent 自己调查，不把检索工作推给用户；只询问科学意图、材料中不存在的领域知识、价值判断和真正需要用户参与的选择。
+
+不仅是“一次调用问一个问题”，现在还在运行时强制**每个 assistant turn 最多调用一次** `ask_user_question`。如果模型预先生成多个问题，后续调用会被阻止。模型必须先读取答案、解释影响并剪枝，然后才能在新一轮生成下一问。
+
+科学问题在 TUI 中使用专用界面：证据、重要性、推荐方案、信心、适用条件和候选路线同时可见；长证据可用 `E` 展开；自定义答案在同一界面内编辑，不再丢失上下文，空答案不能提交。
+
+每次回答都会把紧凑的增量决策事件保存在 tool result `details` 中（不重复存整段 briefing/Contract），可随会话 reload、fork 和 tree 分支恢复。插件据此自动重建并生成 **Shared Scientific Contract**；使用 `/science-contract` 可随时查看。最终确认必须覆盖全部已有决策分支并显式选择确认选项，之后才能进入 Planner。分析目录使用 `purpose="administrative"` 单独询问，不进入科学约定。
+
 ---
 
 ## 代码结构
 
 ```
 extensions/scientist/
-├── index.ts          # 注册 7 个工具 + /scientist 切换
+├── index.ts          # 入口：生命周期、资源发现与模块装配
+├── commands.ts       # /reflect 命令
+├── dialogue.ts       # 科学决策树、持久化 Contract 与交互式问答 UI
 ├── enforcement.ts    # 注入到 System Prompt 的规则
-├── runner.ts         # Spawn / Fork 执行引擎 + 并行调度
-├── agents.ts         # 从 agents/*.md 加载 Agent 配置
+├── prompts.ts        # Planner/Worker/Reviewer 的统一任务规则
+├── runner.ts         # Spawn / Fork 子进程执行引擎
+├── agents.ts         # 从 agents/*.md 加载 Agent 配置与模型覆盖
+├── tools/            # 各分析工具的注册与实现
+│   ├── index.ts
+│   ├── shared.ts
+│   ├── scout.ts
+│   ├── librarian.ts
+│   ├── pubmed.ts
+│   ├── plan.ts
+│   ├── implement.ts
+│   ├── review.ts
+│   └── logs.ts
 ├── agents/           # 5 个 Agent 的规格文档
 │   ├── scout.md
 │   ├── librarian.md
@@ -236,7 +290,7 @@ extensions/scientist/
     └── scientific-brainstorming/ # 科研讨论
 ```
 
-Scientist 作为 pi 的扩展模块，通过三个钩子接入：`resources_discover` 贡献 Skill 目录，`before_agent_start` 注入规则并启用工具，以及直接注册 7 个 tool 加 `/scientist`、`/reflect` 两个命令。
+Scientist 作为 pi 的扩展模块，通过 `resources_discover` 贡献 Skill 目录，通过 `before_agent_start` 注入规则和当前科学约定，并注册分析工具及 `/reflect`、`/science-contract` 等命令。
 
 ---
 
@@ -251,7 +305,6 @@ Scientist 作为 pi 的扩展模块，通过三个钩子接入：`resources_disc
 | 图表质量 | 默认 matplotlib 样式 | 专用 Skill + Reviewer 检查清单 |
 | 出错恢复 | 人工发现和修复 | 自动追加修复，Plan File 演进 |
 | 增量分析 | 上下文丢失后易重复执行 | CONTINUE 模式，依赖声明 |
-| 并行 | 通常串行 | sci_parallel 并行调度 |
 
 ---
 

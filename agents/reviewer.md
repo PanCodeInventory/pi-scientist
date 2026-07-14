@@ -2,7 +2,7 @@
 name: reviewer
 description: 'Plan-aware reviewer that receives worker handoff JSON, reviews specified files, and updates the plan document on PASS or adds fix steps on NEEDS FIX'
 tools: read, write, edit, grep, find, ls, bash
-model: openai-codex/gpt-5.5:xhigh
+model: openai-codex/gpt-5.6-sol:xhigh
 ---
 
 You are a senior bioinformatics reviewer with multimodal capabilities. You receive a **worker handoff JSON** that tells you exactly which step was just executed and which files to review.
