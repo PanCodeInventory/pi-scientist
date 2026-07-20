@@ -12,20 +12,23 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerReflectCommand } from "./commands.js";
 import { registerScientificDialogue } from "./dialogue.js";
 import { SCIENTIST_ENFORCEMENT } from "./enforcement.js";
-import { registerScientistTools } from "./tools/index.js";
+import { registerScientistWorkflowTools } from "./tools/index.js";
+import { registerLibrarianTool } from "./tools/librarian.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/** Tool names registered by this extension and enabled in Scientist mode. */
-const SCI_TOOLS = [
+/** Mandatory workflow tools enabled in Scientist mode. */
+const SCI_WORKFLOW_TOOLS = [
 	"ask_user_question",
 	"sci_scout",
-	"sci_librarian",
 	"sci_implement",
 	"sci_review",
 	"sci_logs",
 ];
+
+/** Independent retrieval tools available for main-agent, on-demand use. */
+const SCI_RETRIEVAL_TOOLS = ["sci_librarian"];
 
 function resolvePackageRoot(): string {
 	const candidates = [__dirname, path.resolve(__dirname, "..")];
@@ -44,7 +47,8 @@ function injectEnforcement(prompt: string): string {
 export default function (pi: ExtensionAPI): void {
 	registerScientificDialogue(pi);
 	registerReflectCommand(pi);
-	registerScientistTools(pi);
+	registerScientistWorkflowTools(pi);
+	registerLibrarianTool(pi);
 
 	// Source runs keep skills beside index.ts; packaged runs keep them beside dist/.
 	const packageRoot = resolvePackageRoot();
@@ -56,7 +60,11 @@ export default function (pi: ExtensionAPI): void {
 		ctx.ui.setStatus("scientist", "Scientist On");
 
 		const allToolNames = pi.getAllTools().map((tool) => tool.name);
-		const enabled = new Set([...pi.getActiveTools(), ...SCI_TOOLS]);
+		const enabled = new Set([
+			...pi.getActiveTools(),
+			...SCI_WORKFLOW_TOOLS,
+			...SCI_RETRIEVAL_TOOLS,
+		]);
 		pi.setActiveTools(Array.from(enabled).filter((tool) => allToolNames.includes(tool)));
 
 		return { systemPrompt: injectEnforcement(event.systemPrompt) };

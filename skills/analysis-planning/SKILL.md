@@ -5,7 +5,7 @@ description: Creates persistent, methodology-focused bioinformatics task documen
 
 # Bioinformatics Analysis Planning
 
-Use this skill as the **main Scientist agent** to turn Scout findings, Librarian evidence, the confirmed Shared Scientific Contract, and the user-confirmed analysis directory into a persistent Markdown task document.
+Use this skill as the **main Scientist agent** to turn mandatory Scout findings, any relevant evidence optionally retrieved with `sci_librarian`, the confirmed Shared Scientific Contract, and the user-confirmed analysis directory into a persistent Markdown task document. `sci_librarian` is not a prerequisite for planning; include its evidence only when the main agent chose to retrieve it for a concrete evidence gap.
 
 The task document drives worker/reviewer execution. The final narrative report is **not** a subagent step: after every analysis step in the Todolist has passed review, write the report as the main agent and then create a git commit.
 

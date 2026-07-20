@@ -32,13 +32,13 @@ Scientist 用三条规则解决上面的问题。
 
 ---
 
-## 主 Agent + 四个专用子 Agent
+## 主 Agent + 三个流程子 Agent + 一个独立检索 Agent
 
-单个 Agent 同时负责调查、执行和审查时容易走捷径，因此 Scientist 仍把证据收集、代码执行和结果审查交给四个隔离的专用子 Agent。规划需要完整理解对话和 Shared Scientific Contract，直接由主 Agent 完成。
+单个 Agent 同时负责调查、执行和审查时容易走捷径，因此 Scientist 把本地数据勘察、代码执行和结果审查交给 Scout、Worker、Reviewer 三个流程子 Agent。Librarian 独立作为外部检索工具存在，不再是固定流程节点；Main Agent 只有在方法文档、协议或文献证据确实能补足当前信息时才按需调用。规划需要完整理解对话和 Shared Scientific Contract，直接由主 Agent 完成。
 
 ```
 ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-│  SCOUT   │  │LIBRARIAN │  │MAIN AGENT│  │  WORKER  │  │ REVIEWER │
+│  SCOUT   │  │LIBRARIAN*│  │MAIN AGENT│  │  WORKER  │  │ REVIEWER │
 │ 检查数据  │  │ 研究方法  │  │讨论+计划  │  │ 执行步骤  │  │ 审查输出  │
 ├──────────┤  ├──────────┤  ├──────────┤  ├──────────┤  ├──────────┤
 │ read/ls  │  │ pubmed   │  │ read     │  │ read/write│  │ read     │
@@ -48,7 +48,9 @@ Scientist 用三条规则解决上面的问题。
 └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘
 ```
 
-四个子 Agent 的默认模型由 `agents/*.md` 的 frontmatter 定义；主 Agent 使用当前 pi 会话选择的模型：
+`* Librarian` 是 Main Agent 按需调用的独立检索工具，不属于强制箭头链路。
+
+四个子 Agent 的默认模型由 `agents/*.md` 的 frontmatter 定义；其中 Librarian 是可选检索 Agent，其余三个承担固定流程职责。主 Agent 使用当前 pi 会话选择的模型：
 
 | Agent | 默认模型 | 环境变量覆盖 |
 |-------|----------|--------------|
@@ -102,9 +104,9 @@ Worker 读取计划、执行步骤、产出文件。它不能编辑计划文件�
 
 ### 子 Agent 隔离，规划留在主会话
 
-Scout、Librarian、Worker 和 Reviewer 都使用 **Spawn** 模式：启动独立 pi 进程，只接收当前任务和各自的系统提示。Worker 不需要知道用户最开始说了什么，只需要读取计划文件中当前步骤的参数和目标。
+Scout、Librarian、Worker 和 Reviewer 都使用 **Spawn** 模式：启动独立 pi 进程，只接收当前任务和各自的系统提示。不同的是，Librarian 只在 Main Agent 识别出具体外部证据缺口时启动；Worker 不需要知道用户最开始说了什么，只需要读取计划文件中当前步骤的参数和目标。
 
-规划不同。它需要综合用户意图、Scout 数据勘察、Librarian 方法证据和持续更新的 Shared Scientific Contract。这些信息已经完整存在于主会话，因此不再 Fork 独立的规划子 Agent；主 Agent 直接读取 `analysis-planning` Skill，并把计划写入 `Task/TaskN-YYYYMMDD.md`。这样既减少一次模型调用，也避免复制整段会话上下文。
+规划不同。它需要综合用户意图、Scout 数据勘察、按需获取的外部证据和持续更新的 Shared Scientific Contract。这些信息已经完整存在于主会话，因此不再 Fork 独立的规划子 Agent；主 Agent 直接读取 `analysis-planning` Skill，并把计划写入 `Task/TaskN-YYYYMMDD.md`。这样既减少不必要的模型调用，也避免复制整段会话上下文。
 
 ---
 
@@ -175,11 +177,11 @@ FAIL 那一列里，P01 没有被勾选，但末尾追加了 `P01_fix1`。下一
 
 三种模式，主 Agent 根据用户请求自动选择。
 
-**NEW（新分析）**：从原始数据开始。Scout 查数据 → Librarian 查方法 → **主 Agent 与用户进行科学讨论并形成共同科学约定** → 主 Agent 写计划 → Worker + Reviewer 逐步推进。
+**NEW（新分析）**：从原始数据开始。Scout 查数据 → **主 Agent 与用户进行科学讨论并形成共同科学约定** → 主 Agent 写计划 → Worker + Reviewer 逐步推进。若当前任务存在方法文档、协议或文献证据缺口，Main Agent 可在合适位置按需调用 Librarian，但它不是必经步骤。
 
 **CONTINUE（追加分析）**：基于已完成的分析加新模块。Scout 只扫已有产出，不重扫原始数据；如果新增分析涉及重要的方法或解释选择，主 Agent 先和用户讨论清楚。新计划明确声明对已有文件的依赖——Worker 直接读，不重新执行前置步骤。
 
-**QUERY（快速查询）**：问一个具体数值或查一个结果。主 Agent 直接读文件回答，不调用任何子 Agent。
+**QUERY（快速查询/检索）**：问一个具体数值、查已有结果，或单独检索方法文档与文献。本地事实由主 Agent 直接读文件回答；外部证据可按需调用独立的 Librarian 工具。两者都不创建计划，也不启动 Scout、Worker 或 Reviewer。
 
 一个完整的 NEW 流程示例：
 
@@ -189,7 +191,7 @@ FAIL 那一列里，P01 没有被勾选，但末尾追加了 `P01_fix1`。下一
 Scout
   → h5ad, 50,000 × 30,000, 3 条件 × 3 重复
 
-Librarian
+Librarian（可选；仅在 Main Agent 判断需要外部证据时）
   → scanpy 1.10, pseudobulk/Wilcoxon 的适用边界、Wolf et al. 2018
 
 科学讨论（逐问逐答）
@@ -211,7 +213,7 @@ sci_implement × N
 
 ### 为什么在规划前增加科学讨论
 
-Scout 和 Librarian 返回后，Agent 掌握的信息通常显著多于用户：数据维度、重复结构、质量信号、方法比较、文献证据都可能只存在于折叠的工具输出中。如果这时只问一句“输出到哪个目录”，用户实际上没有参与分析设计。
+Scout 返回后，以及 Main Agent 选择进行外部检索时，Agent 掌握的信息通常显著多于用户：数据维度、重复结构、质量信号、方法比较、文献证据都可能只存在于折叠的工具输出中。如果这时只问一句“输出到哪个目录”，用户实际上没有参与分析设计。
 
 Scientist 现在把 `ask_user_question` 作为科学对话工具，而不只是澄清工具。对话借鉴了 `grill-me` 的三个关键原则：先建立有依赖关系的决策树、一次解决一个分支、每个问题都给出 Agent 的推荐答案。同时保留 Scientist 自己的限制：不为“追问”而追问，深度由科学风险和剩余不确定性决定。
 
@@ -285,7 +287,7 @@ Scientist 作为 pi 的扩展模块，通过 `resources_discover` 贡献 Skill �
 | 维度 | 通用 Agent 框架 | Scientist |
 |------|----------------|-----------|
 | 分析计划 | 模型自行决定顺序，无记录 | Plan File 持久化，每步有规格 |
-| 方法选择 | 凭训练记忆推荐 | Librarian 实时查文档和文献 |
+| 方法选择 | 凭训练记忆推荐 | Main Agent 判断证据缺口，按需用 Librarian 查文档和文献 |
 | 数据溯源 | 不验证 | Worker 禁止伪造，Reviewer 审计 |
 | 代码审查 | 能跑即通过 | 多维审查：统计、图表、合规 |
 | 图表质量 | 默认 matplotlib 样式 | 专用 Skill + Reviewer 检查清单 |
@@ -338,8 +340,11 @@ Worker 输出 `ANALYSIS TERMINATED` 时，`sci_implement` 直接报错，Reviewe
 # 追加分析
 在这些 DEG 上跑 TCGA 生存分析
 
-# 随手查
+# 随手查本地结果
 cluster 3 的 top 10 marker gene 是什么
+
+# 独立检索（Main Agent 判断是否调用 Librarian）
+检索近三年的单细胞差异分析 benchmark，并比较 pseudobulk 与 cell-level 方法
 ```
 
 ---
@@ -350,7 +355,7 @@ cluster 3 的 top 10 marker gene 是什么
 
 四个设计选择：
 
-1. 职责分离。Scout 看数据，Librarian 查资料，主 Agent 结合完整对话制定计划，Worker 写代码，Reviewer 独立审结果。
+1. 职责分离。Scout 看数据，主 Agent 按需用 Librarian 查外部资料并结合完整对话制定计划，Worker 写代码，Reviewer 独立审结果；检索不是固定流程节点。
 2. 计划落到文件系统。对话历史不可靠，Markdown 文件可靠。每一步的规格、输入、输出、参数都写在计划文件里。
 3. 审查不通过不等于完成。Worker 产出只是半程，Reviewer 打勾才是终点。
 4. Skill 是硬规范。Skill 文件里包含了经过验证的参数建议、代码模板和审查标准。Agent 不需要凭训练记忆猜测怎么做——读 Skill 就能拿到确定的方案。

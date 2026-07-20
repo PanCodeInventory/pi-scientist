@@ -15,29 +15,19 @@ The workflow has four phases:
 3. **Phase 2** — TIMER2 independent validation for significant hits
 4. **Phase 2.5** — Immune infiltration & gene co-expression analysis
 
-All tools are accessed via the **tooluniverse** MCP server through `tooluniverse_execute_tool`.
+The analysis uses verified ToolUniverse interfaces (MCP, CLI, or in-process API as specified below) inside the normal Scientist execution workflow.
 
-## ⚠️ Execution Mode: Delegate to sci_librarian
+## Execution Mode: Scientist workflow with optional retrieval
 
-This skill involves many sequential MCP tool calls (40–60 for a 10-gene list). **Do NOT execute them in the main conversation.** Instead:
+This skill describes a multi-step analysis, not a Librarian retrieval task. Do not delegate the TCGA/HPA/TIMER2 computation or report generation to `sci_librarian`.
 
-1. **Load this SKILL.md** — understand the four-phase workflow and Critical Rules.
-2. **Clarify with the user** — gene list, cancer types, specific questions.
-3. **Call `sci_librarian`** with a task description that embeds the full workflow context (see below).
+1. **Load this SKILL.md** — understand the workflow and Critical Rules.
+2. **Classify as NEW or CONTINUE** and use `sci_scout` to inspect the input gene list and relevant existing outputs.
+3. **Resolve scientific choices with the user**, confirm the Shared Scientific Contract and analysis directory, then create a persistent plan that assigns this skill to the relevant worker steps.
+4. **Run the analysis through `sci_implement`** so Worker execution is automatically reviewed.
+5. **Optionally call `sci_librarian` only when the main agent identifies a concrete external-evidence gap**, such as current package documentation, benchmark comparisons, or literature interpretation. The analysis workflow must remain valid when no Librarian lookup is needed.
 
-The `sci_librarian` agent has MCP access and will execute all tool calls in a single focused context. You then review and present the results to the user.
-
-### What to put in the sci_librarian `task` parameter:
-
-The subagent has NO access to this SKILL.md, so you must include everything it needs:
-- The gene list (symbols + DE direction if available)
-- The four-phase workflow (Phase 0 → 1 → 2 → 2.5) with `tooluniverse_execute_tool` call templates
-- The 5 Critical Rules below
-- The batch size limit (≤8 parallel calls)
-- The validation checkpoints (verify gene names after each HPA return)
-- The output format template from this skill
-- The path to save the final report
-- Point it to `references/cancer-mapping.md` and `references/tool-reference.md` for lookup tables
+When optional retrieval is useful, give `sci_librarian` a focused retrieval question with the gene symbols, cancer types, phenotype, and desired evidence type. Do not ask it to run the complete four-phase scan or write files.
 
 ## Critical Rules (learned from production failures)
 
