@@ -1,0 +1,4 @@
+interface:
+  display_name: "单细胞基因集打分决策"
+  short_description: "为单细胞、空间转录组与 pseudobulk 数据选择并验证基因集打分方法"
+  default_prompt: "Use $choose-single-cell-gene-set-scoring to recommend and validate a gene-set scoring method for my single-cell or pseudobulk analysis."
