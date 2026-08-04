@@ -410,6 +410,8 @@ async function showScientificDialog(
 		let evidenceExpanded = params.evidence.length <= 3;
 		let validationMessage = "";
 		let focused = false;
+		let cachedWidth: number | undefined;
+		let cachedLines: string[] | undefined;
 
 		const customOptionIndex = options.length;
 		const displayOptionCount = options.length + (allowCustom ? 1 : 0);
@@ -427,6 +429,8 @@ async function showScientificDialog(
 		editor.setText(params.placeholder ?? "");
 
 		function refresh(): void {
+			cachedWidth = undefined;
+			cachedLines = undefined;
 			tui.requestRender();
 		}
 
@@ -509,6 +513,8 @@ async function showScientificDialog(
 		}
 
 		function render(width: number): string[] {
+			if (cachedLines && cachedWidth === width) return cachedLines;
+
 			const lines: string[] = [];
 			const renderWidth = Math.max(1, width);
 
@@ -602,6 +608,8 @@ async function showScientificDialog(
 				: "↑↓ 选择 · Enter 确认 · E 展开证据 · Esc 取消";
 			addWrapped(theme.fg("dim", help), " ");
 			lines.push(theme.fg("accent", "─".repeat(renderWidth)));
+			cachedWidth = width;
+			cachedLines = lines;
 			return lines;
 		}
 
@@ -610,11 +618,18 @@ async function showScientificDialog(
 				return focused;
 			},
 			set focused(value: boolean) {
+				if (focused === value) return;
 				focused = value;
 				editor.focused = value && editMode;
+				cachedWidth = undefined;
+				cachedLines = undefined;
 			},
 			render,
-			invalidate: () => {},
+			invalidate: () => {
+				cachedWidth = undefined;
+				cachedLines = undefined;
+				editor.invalidate();
+			},
 			handleInput,
 		};
 	});
@@ -700,6 +715,20 @@ async function showFallbackDialog(
 			};
 		}
 		ctx.ui.notify("答案不能为空", "warning");
+	}
+}
+
+async function withWorkingLoaderHidden<T>(ctx: ExtensionContext, operation: () => Promise<T>): Promise<T> {
+	if (ctx.mode !== "tui") return await operation();
+
+	// A tool waits while Pi is still streaming, so its 80 ms working spinner keeps
+	// rendering. With this tall dialog the spinner can sit above the viewport,
+	// forcing pi-tui into repeated full redraws that visibly flicker inside tmux.
+	ctx.ui.setWorkingVisible(false);
+	try {
+		return await operation();
+	} finally {
+		ctx.ui.setWorkingVisible(true);
 	}
 }
 
@@ -836,32 +865,34 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 				}, decisions);
 			}
 
-			const result = purpose === "scientific" && ctx.mode === "tui"
-				? await showScientificDialog({
-					question: params.question,
-					decisionId: params.decisionId!,
-					category: params.category as DecisionCategory,
-					briefing: params.briefing,
-					evidence,
-					whyItMatters: params.whyItMatters!,
-					recommendation: recommendation!,
-					options,
-					allowCustom: params.allowCustom,
-					multiline: params.multiline,
-					placeholder: params.placeholder,
-				}, ctx)
-				: await showFallbackDialog({
-					question: params.question,
-					purpose,
-					briefing: params.briefing,
-					evidence,
-					whyItMatters: params.whyItMatters,
-					recommendation,
-					options,
-					allowCustom: params.allowCustom,
-					multiline: params.multiline,
-					placeholder: params.placeholder,
-				}, ctx);
+			const result = await withWorkingLoaderHidden(ctx, () =>
+				purpose === "scientific" && ctx.mode === "tui"
+					? showScientificDialog({
+						question: params.question,
+						decisionId: params.decisionId!,
+						category: params.category as DecisionCategory,
+						briefing: params.briefing,
+						evidence,
+						whyItMatters: params.whyItMatters!,
+						recommendation: recommendation!,
+						options,
+						allowCustom: params.allowCustom,
+						multiline: params.multiline,
+						placeholder: params.placeholder,
+					}, ctx)
+					: showFallbackDialog({
+						question: params.question,
+						purpose,
+						briefing: params.briefing,
+						evidence,
+						whyItMatters: params.whyItMatters,
+						recommendation,
+						options,
+						allowCustom: params.allowCustom,
+						multiline: params.multiline,
+						placeholder: params.placeholder,
+					}, ctx),
+			);
 
 			if (!result) {
 				return {
