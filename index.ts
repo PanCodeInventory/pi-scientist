@@ -9,9 +9,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerReflectCommand } from "./commands.js";
+import { registerReflectCommand } from "./core/commands.js";
 import { registerScientificDialogue } from "./dialogue/index.js";
-import { SCIENTIST_ENFORCEMENT } from "./enforcement.js";
+import { SCIENTIST_ENFORCEMENT } from "./core/enforcement.js";
 import { registerScientistWorkflowTools } from "./tools/index.js";
 import { registerLibrarianTool } from "./tools/librarian.js";
 

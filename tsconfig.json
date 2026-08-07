@@ -17,12 +17,8 @@
   },
   "include": [
     "index.ts",
-    "commands.ts",
+    "core/**/*.ts",
     "dialogue/**/*.ts",
-    "enforcement.ts",
-    "prompts.ts",
-    "runner.ts",
-    "agents.ts",
     "tools/**/*.ts",
     "agents/**/*.md"
   ],

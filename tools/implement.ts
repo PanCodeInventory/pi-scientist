@@ -3,9 +3,9 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { discoverScientists } from "../agents.js";
-import { buildCompletionReminder, buildReviewTask, buildWorkerTask } from "../prompts.js";
-import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../runner.js";
+import { discoverScientists } from "../core/agents.js";
+import { buildCompletionReminder, buildReviewTask, buildWorkerTask } from "../core/prompts.js";
+import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../core/runner.js";
 import { extractHandoffJson, extractOutput, hasUncheckedTodolistItems, makeDetails, stubDetails } from "./shared.js";
 
 export function registerImplementTool(pi: ExtensionAPI): void {

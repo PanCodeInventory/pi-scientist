@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AgentRunResult, AgentRenderItem } from "../runner.js";
+import type { AgentRunResult, AgentRenderItem } from "../core/runner.js";
 
 export function extractOutput(result: AgentRunResult): string {
 	if (result.exitCode !== 0) {

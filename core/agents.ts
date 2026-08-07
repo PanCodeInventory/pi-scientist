@@ -20,16 +20,16 @@ const __dirname = path.dirname(__filename);
 /**
  * Resolve the bundled agents directory for both development and packaged runs.
  *
- * - Development / jiti: this file lives at the package root, so agents are in
- *   `<root>/agents`.
- * - Built package: this file is emitted to `<root>/dist/agents.js`, while
- *   package.json ships `agents/` as a sibling of `dist/`, so agents are in
- *   `<root>/agents`, i.e. `../agents` from here.
+ * This file lives in `core/`, so the bundled `agents/` markdown directory sits
+ * one level above `core/` in source/jiti runs, and two levels above in built
+ * runs (where this file is emitted to `<root>/dist/core/agents.js`):
+ * - Development / jiti: `<root>/core/agents.ts`  → `<root>/agents`   (`../agents`)
+ * - Built package:       `<root>/dist/core/agents.js` → `<root>/agents`   (`../../agents`)
  */
 function resolveBundledAgentsDir(): string | null {
 	const candidates = [
-		path.join(__dirname, "agents"),
 		path.resolve(__dirname, "..", "agents"),
+		path.resolve(__dirname, "..", "..", "agents"),
 	];
 
 	for (const candidate of candidates) {

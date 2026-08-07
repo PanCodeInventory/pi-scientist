@@ -2,9 +2,9 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { discoverScientists } from "../agents.js";
-import { buildCompletionReminder, buildReviewTask } from "../prompts.js";
-import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../runner.js";
+import { discoverScientists } from "../core/agents.js";
+import { buildCompletionReminder, buildReviewTask } from "../core/prompts.js";
+import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../core/runner.js";
 import { extractOutput, hasUncheckedTodolistItems, makeDetails } from "./shared.js";
 
 export function registerReviewTool(pi: ExtensionAPI): void {

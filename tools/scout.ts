@@ -2,8 +2,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { discoverScientists } from "../agents.js";
-import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../runner.js";
+import { discoverScientists } from "../core/agents.js";
+import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../core/runner.js";
 import { extractOutput, makeDetails } from "./shared.js";
 
 export function registerScoutTool(pi: ExtensionAPI): void {
