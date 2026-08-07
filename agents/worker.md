@@ -186,17 +186,7 @@ For external biomedical data and specialized bioinformatics tools — TCGA/GDC/c
 ./scripts/tu-min <subcommand> [args]      # path is relative to the skill directory
 ```
 
-First `read` the skill's `SKILL.md` (from its `<location>` in your `<available_skills>` section) for the full command reference and category list. The five subcommands:
-
-| Command | Purpose |
-|---------|---------|
-| `tu-min list [--mode categories]` | Enumerate available tools/categories |
-| `tu-min grep "<term>" [--field description]` | Search tool names/descriptions by text/regex |
-| `tu-min info <tool> [<tool>...]` | Show a tool's parameters + examples |
-| `tu-min find "<natural language>"` | Keyword search across all loaded tools |
-| `tu-min run <tool> <args>` | Execute a tool (args as `key=value` pairs OR one JSON string) |
-
-**Workflow: discover → inspect → run.** Always run `info` before `run` if you are unsure of a tool's exact parameter names — guessing parameter names is the #1 cause of failed runs.
+First `read` the skill's `SKILL.md` (from its `<location>` in your `<available_skills>` section) for the full command reference, category list, and exact subcommands (`list` / `grep` / `info` / `find` / `run`). Workflow: discover → inspect → run — always run `info` before `run` if you are unsure of a tool's exact parameter names; guessing parameter names is the #1 cause of failed runs.
 
 **When retrieving public data or bioinformatics information, always use tooluniverse-min first. If a tool genuinely cannot complete the task (not in the whitelist, or returns empty), fall back to direct API calls — all API requests MUST be routed through port 7897.** If `./scripts/tu-min` errors with `'tu' CLI not found`, the Python dependency has not been set up on this machine; report it rather than fabricating the data.
 
@@ -264,18 +254,9 @@ Pick the tool with this decision:
 > R's range. Python figures MUST still comply fully with figure-standards.md.
 
 **Regardless of tool (R or Python), ALL final figures MUST:**
-1. `read` `skills/visualization/shared/figure-standards.md` before plotting.
+1. `read` `skills/visualization/shared/figure-standards.md` before plotting and self-check its 🔴 BLOCKERs before declaring the step done — never hand off a figure you know violates a BLOCKER. The reviewer rejects any `results/plots/` figure that fails one.
 2. Save BOTH `.png` (dpi=300) AND `.pdf`.
-3. Self-check the 6 🔴 BLOCKERs before declaring the step done — never hand off
-   a figure you know violates a BLOCKER.
-4. R path: also `read` the `visualization` SKILL.md and reuse `theme_elegant()`
-   + `get_palette_values()` — never hand-roll colors/theme.
-   Python path: implement the SOT by hand — Elegant Muted palette, remove
-   top+right spines, sans-serif ≥9pt labels / ≥7pt ticks, frameless legend on
-   the right, NO annotation text inside the plot, no gridlines, white bg.
-
-The reviewer enforces the same 6 🔴 BLOCKERs on every `results/plots/` figure
-(R or Python alike). A figure that fails one WILL be rejected. Self-check first.
+3. R path: also `read` the `visualization` SKILL.md and reuse `theme_elegant()` + `get_palette_values()` — never hand-roll colors/theme. Python path: implement the SOT by hand; do NOT rely on memory for the palette hex codes, DPI, colormap blacklist, or layout rules — they are exact, not approximate.
 
 ## Tmux Execution Mode
 

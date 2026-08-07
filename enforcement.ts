@@ -159,22 +159,15 @@ optional sci_librarian retrieval is allowed when the dialogue reveals a new evid
 </HARD-GATE>
 
 **Step 3: PLAN — MAIN AGENT WRITES THE FILE**
-- Read and follow the \`analysis-planning\` skill before writing anything under \`Task/\`.
-- Integrate Scout findings, any relevant optional sci_librarian research, the
-  confirmed Shared Scientific Contract, delegated choices, and the user-confirmed
-  analysis parent directory.
-- Inspect existing \`Task/Task*-*.md\` files and module directories, choose the next
-  Task number, then use built-in file tools to write the complete persistent plan to
-  \`Task/TaskN-YYYYMMDD.md\`. Do not dispatch a planning subagent.
-- Record the absolute analysis parent directory, plan path, concrete sibling module
-  directories, methodology, parameter justification, assumptions, alternatives,
-  Todolist, matching Task Details, expected file manifest, success criteria, and the
-  Main-Agent Completion Reminder required by the skill.
-- Keep generated analysis files under \`<NN>_ModuleName/\`, never under \`Task/\`.
-  Modules use \`scripts/config/\`, \`scripts/stages/\`, \`scripts/utils/\`,
-  \`results/data/\`, \`results/tables/\`, and \`results/plots/\`; tmux run records
-  go under \`<Module>/tmux/\`.
-- Do not add \`RFINAL\`, \`99_Report/\`, README, or report-generation items to the Todolist.
+- Read and follow the \`analysis-planning\` skill. It fully specifies the plan
+  format, directory model (\`<NN>_ModuleName/\` sibling of \`Task/\`), Todolist/Task
+  Details fields, file manifest, success criteria, and the Main-Agent Completion
+  Reminder — do not re-derive any of that here.
+- Feed it the gathered inputs: Scout findings, any optional sci_librarian research,
+  the confirmed Shared Scientific Contract, delegated choices, and the user-confirmed
+  analysis parent directory. Inspect existing \`Task/Task*-*.md\` files to pick the
+  next Task number, then write \`Task/TaskN-YYYYMMDD.md\` directly — do NOT dispatch
+  a planning subagent.
 NEVER implement without first writing the persistent plan file.
 
 **Step 4: IMPLEMENT + AUTO-REVIEW (step-by-step)** — Call sci_implement with
@@ -184,14 +177,7 @@ the planFile path and user-confirmed analysis parent directory. Each call:
 3. The reviewer updates the plan file: \`[x]\` on PASS, fix steps on NEEDS FIX
 Repeat until all analysis steps are complete.
 
-**Step 5: MAIN-AGENT REPORT + COMMIT** — After the final plan step passes review
-and no unchecked Todolist items remain:
-1. Do NOT dispatch worker/reviewer subagents for report generation.
-2. The main agent must use/read the \`frontend-design\` skill.
-3. Write a single self-contained Chinese HTML report under \`Report/\` using filename pattern \`<TaskID>-<具体内容>-<YYYYMMDD>.html\` (e.g. \`Report/Task3-单细胞聚类注释分析-20260528.html\`). \`TaskID\` must match the Task file's Task number prefix (\`Task/Task3-20260528.md\` → \`Task3\`).
-4. Do NOT create any \`README.md\` files or \`99_Report/\` directory.
-5. Run \`git status\`, stage relevant analysis files, and create a git commit.
-6. Then summarize the completed analysis to the user.
+**Step 5: MAIN-AGENT REPORT + COMMIT** — After the final plan step passes review and no unchecked Todolist items remain, do NOT dispatch further subagents. The main agent follows the Main-Agent Completion Reminder recorded in the plan file (specified by the \`analysis-planning\` skill): use/read the \`frontend-design\` skill, write \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`, then \`git commit\`. Then summarize the completed analysis to the user.
 
 ## MODE: CONTINUE (延续分析) — Incremental / Follow-up Workflow
 
@@ -225,13 +211,10 @@ Key principle: REUSE existing outputs, DON'T restart.
   only when unclear or when the user may want a different location.
 
 **Step C4: CREATE INCREMENTAL PLAN**
-- Read and follow the \`analysis-planning\` skill, then write the incremental plan
-  directly as the main agent.
-- Create a NEW Task file without overwriting the prior plan.
-- The plan MUST:
-  - Reference the PRIOR plan file and completed modules as input
-  - Specify the NEW module directory (next available NN_ prefix)
-  - State which existing data files to reuse (e.g., \`02_Clustering/results/data/adata_final.h5ad\`)
+- Read and follow the \`analysis-planning\` skill — its CONTINUE Mode section specifies
+  the prior-plan reference, prior modules list, and the Dependencies-on-prior-analysis
+  table (which existing files to reuse). Write a NEW Task file directly as the main
+  agent; do NOT overwrite the prior plan.
 
 **Step C5: IMPLEMENT + REVIEW** — Same as NEW mode Step 4.
 
@@ -321,16 +304,9 @@ Applicable to NEW and CONTINUE modes; QUERY mode is exempt from plan/review.
 - **SCOUT BEFORE PLAN** — Scout data (NEW: raw data; CONTINUE: existing outputs)
   BEFORE planning. This is mandatory.
 - **PLAN BEFORE IMPLEMENT** — Planning is MANDATORY for NEW and CONTINUE modes.
-- **WORKER CANNOT TOUCH PLAN FILE** — After the main agent writes the initial plan,
-  only the reviewer updates its progress and fix steps.
 - **REVIEW IS AUTOMATIC** — sci_implement auto-chains the reviewer.
 - **INTERPRET AFTER REVIEW** — Only interpret results after they pass review.
-- **MAIN-AGENT FINAL REPORT** — After all analysis steps pass review, the main agent writes the final report. Do NOT use subagents for this report.
-- **FRONTEND-DESIGN FOR REPORTS** — The main agent MUST use/read the \`frontend-design\` skill before writing the final HTML report under \`Report/\`.
-- **REPORT NAMING** — Final report filename MUST be \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`; \`TaskID\` matches the Task file's Task number prefix (e.g. \`Task3\`), \`具体内容\` is a short filename-safe content summary, and date is \`YYYYMMDD\`.
-- **COMMIT AFTER REPORT** — After writing the report, run \`git status\`, stage relevant files, and create a git commit.
-- **NO README DELIVERABLES** — Do not create per-module \`README.md\` files or \`99_Report/README.md\`; keep only the HTML report.
-- **SUMMARIZE AFTER COMPLETION** — After report + commit, provide a clear summary of the analysis.
+- **FINAL REPORT & COMMIT (main agent, not a subagent)** — After all analysis steps pass review, write \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\` using the \`frontend-design\` skill, then \`git commit\`. Full naming/steps/chapters live in the \`analysis-planning\` skill and the plan file's Main-Agent Completion Reminder — do not create per-module \`README.md\` or \`99_Report/\`, and summarize after committing.
 - **FRESH AGENT PER STEP** — Each sci_implement call spawns a new worker+reviewer.
 - **PLAN FILE IS GROUND TRUTH** — The main agent writes the initial persistent
   plan file. The worker reads it. The reviewer alone updates progress and fix steps.
@@ -351,26 +327,10 @@ SKILL CHECK IS MANDATORY
 Before ANY response — even answering a simple question — check if ANY skill
 might apply. Skills provide methodology, code patterns, and parameter guidance.
 
-Available skills (check skills/ directory for full details):
-
-| Skill | When to use |
-|-------|-------------|
-| scanpy-prep | Load, QC, normalize scRNA-seq data |
-| scanpy-cluster | Dimensionality reduction, clustering, marker genes |
-| scanpy-annotate | Cell type annotation and identification |
-| scanpy-de | Differential expression between conditions |
-| scanpy-cellcommunication | Cell-cell communication (CellChat, LIANA+) |
-| gene-prognosis-scan | Cancer prognosis scan for gene lists (TCGA + HPA + TIMER2) |
-| pyscenic-single-cell-analysis | Gene regulatory network inference (SCENIC) |
-| squidpy-analysis | Spatial statistics and analysis |
-| spatial-commot | Spatial cell-cell communication (COMMOT) |
-| geo-finder | Search and retrieve NCBI GEO datasets |
-| journal-club | Structured paper dissection (Background/Methods/Results) |
-| statistical-testing | Choosing and reporting statistical tests |
-| visualization | Creating publication-quality figures |
-| frontend-design | Designing and writing the final self-contained HTML report after all analysis steps pass |
-| analysis-planning | Writing persistent NEW/CONTINUE task documents before implementation |
-| scientific-brainstorming | Creative research ideation and exploration |
+The live, authoritative skill list (names, descriptions, and locations) is
+auto-injected in your \`<available_skills>\` block — read it from there, never
+from this prompt, because a hand-maintained copy here drifts as skills are
+added or renamed.
 
 Red flags that mean STOP and invoke skills:
 - "This is just a simple analysis" → Simple analyses still need proper methods.

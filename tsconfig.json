@@ -18,7 +18,7 @@
   "include": [
     "index.ts",
     "commands.ts",
-    "dialogue.ts",
+    "dialogue/**/*.ts",
     "enforcement.ts",
     "prompts.ts",
     "runner.ts",
