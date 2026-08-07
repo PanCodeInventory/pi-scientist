@@ -19,7 +19,7 @@ export function registerLibrarianTool(pi: ExtensionAPI): void {
 			description: [
 				"Run an independent retrieval agent for bioinformatics methods, package documentation, published protocols, and peer-reviewed literature.",
 				"The librarian queries the tooluniverse-min skill (curated ~106-tool CLI whitelist) for specialized bioinformatics resources, Context7 for package docs,",
-				"Web Reader for published methods, and pubmed_search for direct PubMed article discovery and retrieval.",
+				"Web Reader for published methods, and the tooluniverse-min whitelist (PubMed/Europe PMC/OpenAlex) for literature discovery.",
 				"This is an optional research tool chosen by the main agent when external evidence would materially improve an answer, analysis design, or interpretation;",
 				"it is not a mandatory stage of the Scientist workflow and does not replace sci_scout for inspecting local data.",
 			].join(" "),
