@@ -15,7 +15,7 @@ The workflow has four phases:
 3. **Phase 2** — TIMER2 independent validation for significant hits
 4. **Phase 2.5** — Immune infiltration & gene co-expression analysis
 
-The analysis uses verified ToolUniverse interfaces (MCP, CLI, or in-process API as specified below) inside the normal Scientist execution workflow.
+The analysis uses verified ToolUniverse interfaces — the local `tu` CLI for one-off queries and the in-process `ToolUniverse` API for batch jobs (see below) — inside the normal Scientist execution workflow. No MCP server is involved.
 
 ## Execution Mode: Scientist workflow with optional retrieval
 
@@ -39,16 +39,16 @@ Ensembl IDs are non-obvious and easy to get wrong. ENSG00000157060 looks like TR
 ### Rule 2: Validate every HPA return
 After each `HPA_get_cancer_prognostics_by_gene` call, check that the returned `gene` field matches the expected gene name. A wrong ID returns a *different gene's data without any error message*.
 
-### Rule 3: Batch parallel calls ≤ 8
-More than 8 parallel MCP calls causes silent failures — calls return MCP status info instead of data. Split into batches of 6-8.
+### Rule 3: Cap concurrency at ~6 workers
+The in-process `ToolUniverse` client is not thread-safe. Drive parallelism with `ThreadPoolExecutor(max_workers=6)` and one client per thread (`threading.local()`). Higher fan-out triggers transient `"Gene not found"` errors and upstream rate-limiting (cBioPortal/GDC). After each batch, confirm every return carries a real payload (`data` or `status: "success"`) and retry individual failures rather than the whole batch.
 
 ### Rule 4: Parameter names are non-intuitive
 - `TIMER2_gene_correlation` uses `gene1`/`gene2` (NOT `gene`/`gene2`)
 - `TIMER2_survival_association` uses `gene` (NOT `gene_symbol`)
-- When in doubt, check the schema: `tooluniverse_get_tool_info`
+- When in doubt, inspect the schema with `tu info <tool>`
 
-### Rule 5: All tooluniverse tools go through one entry point
-Never call `HPA_get_cancer_prognostics_by_gene` directly. Always wrap: `tooluniverse_execute_tool` → `tool_name` + `arguments`.
+### Rule 5: Call tooluniverse through one entry point
+Don't invoke bare tool names ad hoc. In Python, go through the in-process API — `ToolUniverse().run_one_function({"tool_name": "<PascalCaseTool>", "arguments": {...}})`; from the shell, `tu run <tool> '<json>'`. Both take `tool_name` + `arguments` (see Rule 10 for the name-format difference).
 
 ### Rule 6: Mouse-to-human ortholog mapping — avoid Ensembl /homology/symbol/
 The `homologene` PyPI package is no longer available (HTTP 404). **Do not use** Ensembl REST `/homology/symbol/mouse/{gene}` for ortholog mapping — it is **non-deterministic** for ambiguous symbols. For example, `Cklf` non-deterministically maps to KLF15 or KLF5 (wrong gene family) instead of the correct CKLF. Use **Ensembl BioMart** (batch REST, deterministic) as the primary source, with human-side namesake-alias fallback for historical mouse symbols:
@@ -200,7 +200,7 @@ HPA returned:  { "gene": "SHCBP1L" }
 ```
 
 **Batch integrity check:**
-After each batch, verify every call returned actual data (check for `data` field). Calls that return only MCP status info (server list) are silent failures — retry them individually.
+After each batch, verify every call returned actual data (look for a `data` field or `status: "success"`). Payloads shaped like `{"status": "error", ...}` (e.g. transient `"Gene not found"`) are retryable — re-run those individually rather than treating them as genuine absences.
 
 **Interpreting HPA results:**
 - `prognostic_type: "favorable"` = high expression → better survival (protective)
@@ -282,18 +282,17 @@ For every gene-cancer pair that passed L2 validation, add immune context:
 
 **A. Immune infiltration correlation:**
 ```
-For each (gene_symbol, tcga_code) that passed L2 (parallel):
-  mcp({
-    tool: "tooluniverse_execute_tool",
-    args: {
-      tool_name: "TIMER2_immune_estimation",
-      arguments: {
-        operation: "immune_estimation",
-        cancer: tcga_code,
-        gene: gene_symbol
+For each (gene_symbol, tcga_code) that passed L2 (parallel, ≤6 workers):
+  result = client.run_one_function({
+      "tool_name": "TIMER2Tool",
+      "arguments": {
+          "operation": "immune_estimation",
+          "cancer": tcga_code,
+          "gene": gene_symbol
       }
-    }
   })
+# Shell equivalent (one-off): tu run TIMER2_immune_estimation \
+#   '{"operation":"immune_estimation","cancer":"HNSC","gene":"MAFF"}'
 ```
 
 This returns Spearman correlations between the gene and 6 immune cell marker genes:
@@ -301,18 +300,17 @@ This returns Spearman correlations between the gene and 6 immune cell marker gen
 
 **B. Key gene pair co-expression** (when relevant to the biological question):
 ```
-  mcp({
-    tool: "tooluniverse_execute_tool",
-    args: {
-      tool_name: "TIMER2_gene_correlation",
-      arguments: {
-        operation: "gene_correlation",
-        cancer: tcga_code,
-        gene1: "GENE_A",    // ⚠️ gene1, not gene
-        gene2: "GENE_B"     // ⚠️ gene2
+  result = client.run_one_function({
+      "tool_name": "TIMER2Tool",
+      "arguments": {
+          "operation": "gene_correlation",
+          "cancer": tcga_code,
+          "gene1": "GENE_A",    # ⚠️ gene1, not gene
+          "gene2": "GENE_B"     # ⚠️ gene2
       }
-    }
   })
+# Shell equivalent (one-off): tu run TIMER2_gene_correlation \
+#   '{"operation":"gene_correlation","cancer":"HNSC","gene1":"MAFF","gene2":"TRAF1"}'
 ```
 
 **When to run gene correlation:**

@@ -1,7 +1,7 @@
 ---
 name: geo-finder
-description: Search and retrieve datasets from NCBI GEO (Gene Expression Omnibus) via tooluniverse MCP. Use this skill whenever the user wants to find, browse, or get details about GEO datasets — including RNA-seq, ChIP-seq, ATAC-seq, DNA methylation, or any other functional genomics data deposited in GEO. Triggers on mentions of "GEO data", "GEO dataset", "gene expression omnibus", "find RNA-seq data", "search GEO", "get GEO sample info", "methylation dataset", "ChIP-seq data", "ATAC-seq dataset", or any request to look up published omics datasets by accession (GSE/GSM).
-compatibility: Requires tooluniverse MCP server with GEO tools available.
+description: Search and retrieve datasets from NCBI GEO (Gene Expression Omnibus) via the local `tu` CLI (tooluniverse). Use this skill whenever the user wants to find, browse, or get details about GEO datasets — including RNA-seq, ChIP-seq, ATAC-seq, DNA methylation, or any other functional genomics data deposited in GEO. Triggers on mentions of "GEO data", "GEO dataset", "gene expression omnibus", "find RNA-seq data", "search GEO", "get GEO sample info", "methylation dataset", "ChIP-seq data", "ATAC-seq dataset", or any request to look up published omics datasets by accession (GSE/GSM).
+compatibility: Requires the local `tu` CLI (tooluniverse package). GEO tools are NOT in the `tooluniverse-min` whitelist (GEO is NCBI-hosted), so invoke them with bare `tu` (full registry), not the `tu-min` wrapper. Verify the local proxy can reach NCBI before relying on these calls.
 ---
 
 # GEO-finder
@@ -10,7 +10,13 @@ Search and explore NCBI's Gene Expression Omnibus (GEO) — the world's largest 
 
 ## Tool inventory
 
-All tools live in the **tooluniverse** MCP server. Call them via `mcp({ tool: "<name>", args: '{...}' })`.
+All tools are tooluniverse operations called through the local `tu` CLI. GEO is NCBI-hosted and therefore **not** in the `tooluniverse-min` whitelist — use bare `tu` (full registry), not the `tu-min` wrapper:
+
+```bash
+tu run geo_search_datasets '{"query":"pancreatic cancer","organism":"Homo sapiens"}'
+```
+
+Inspect any tool's parameters first with `tu info <tool>`.
 
 ### Search tools (find datasets)
 

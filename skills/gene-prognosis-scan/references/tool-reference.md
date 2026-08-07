@@ -1,6 +1,6 @@
 # Tool Parameter Reference
 
-Quick-reference for all tooluniverse tools used in the prognosis scan workflow. All tools must be called through `tooluniverse_execute_tool`.
+Quick-reference for all tooluniverse tools used in the prognosis scan workflow. Call them via the in-process API — `ToolUniverse().run_one_function({"tool_name": "<PascalCaseTool>", "arguments": {...}})` — or, for one-off shell use, `tu run <tool> '<json>'`. No MCP server is involved; see SKILL.md Rule 10 for the CLI-vs-in-process name-format difference.
 
 ## Phase 0: Ensembl ID Lookup
 
