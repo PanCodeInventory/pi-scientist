@@ -67,6 +67,13 @@ export default function (pi: ExtensionAPI): void {
 		]);
 		pi.setActiveTools(Array.from(enabled).filter((tool) => allToolNames.includes(tool)));
 
+		// Subagents are spawned by core/runner.ts with SCIENTIST_NO_ENFORCEMENT=1.
+		// SCIENTIST_ENFORCEMENT is a main-agent document (mode classification,
+		// ask_user_question, sci_* orchestration). Subagents lack those tools and
+		// carry their own agent .md system prompt, so skip injection for them.
+		if (process.env.SCIENTIST_NO_ENFORCEMENT) {
+			return {};
+		}
 		return { systemPrompt: injectEnforcement(event.systemPrompt) };
 	});
 }

@@ -219,6 +219,10 @@ async function spawnPiAgent(
 				cwd: options?.workDir ?? cwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
+				// Signal to the scientist extension's before_agent_start hook that this
+				// is a subagent: skip injecting the main-agent SCIENTIST_ENFORCEMENT
+				// prompt. Subagents carry their own agent .md system prompt instead.
+				env: { ...process.env, SCIENTIST_NO_ENFORCEMENT: "1" },
 			});
 			let buffer = "";
 
