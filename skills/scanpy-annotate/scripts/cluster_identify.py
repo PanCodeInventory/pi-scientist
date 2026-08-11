@@ -3,49 +3,12 @@
 import argparse
 import json
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 
 CLUSTER_KEYWORDS = ("cluster", "leiden", "louvain", "seurat")
 DEFAULT_OUTPUT_DIRNAME = "cluster_identify_output"
-
-DEFAULT_REPORT_TEMPLATE = """---
-title: "Cluster Identity Report"
-format:
-  pdf: default
-  gfm: default
-execute:
-  echo: false
----
-
-```{python}
-import json
-import os
-from pathlib import Path
-
-import pandas as pd
-
-output_dir = Path(os.environ["CLUSTER_IDENTIFY_OUTPUT_DIR"])
-config_path = Path(os.environ["CLUSTER_IDENTIFY_CONFIG_PATH"])
-config = json.loads(config_path.read_text(encoding="utf-8"))
-annotations = pd.read_csv(config["annotations"])
-h5ad_path = config.get("h5ad")
-```
-
-# Cluster Identity Report
-
-- Output directory: `{{< meta title >}}`
-- AnnData file: `{python} h5ad_path if h5ad_path else "not provided"`
-
-## Annotations
-
-```{python}
-annotations
-```
-"""
 
 
 def print_progress(message: str) -> None:
@@ -777,63 +740,6 @@ def command_tf(args) -> None:
     write_json({"tf_activity": str(activity_path), "tf_barplot": str(barplot_path)})
 
 
-def build_report_config(output_dir: Path, annotations_path: Path, h5ad_path: str | None) -> Path:
-    config_path = output_dir / "report_config.json"
-    config = {
-        "output_dir": str(output_dir),
-        "annotations": str(annotations_path),
-        "h5ad": str(h5ad_path) if h5ad_path else None,
-    }
-    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
-    return config_path
-
-
-def ensure_report_template(output_dir: Path) -> Path:
-    source = Path(__file__).resolve().parent / "report_template.qmd"
-    destination = output_dir / "report_template.qmd"
-    if source.exists():
-        shutil.copy2(source, destination)
-    else:
-        destination.write_text(DEFAULT_REPORT_TEMPLATE, encoding="utf-8")
-    return destination
-
-
-def run_quarto(template_path: Path, output_dir: Path, env: dict[str, str], fmt: str, final_name: str) -> Path:
-    subprocess.run(
-        ["quarto", "render", str(template_path), "--to", fmt],
-        check=True,
-        cwd=output_dir,
-        env=env,
-    )
-    rendered = template_path.with_suffix(".pdf" if fmt == "pdf" else ".md")
-    final_path = output_dir / final_name
-    if not rendered.exists():
-        fail(f"Quarto render completed but output was not found for format '{fmt}'")
-    shutil.move(str(rendered), str(final_path))
-    return final_path
-
-
-def command_report(args) -> None:
-    output_dir = ensure_dir(args.output_dir)
-    annotations_path = Path(args.annotations)
-    if not annotations_path.exists():
-        fail(f"Annotations file not found: {annotations_path}")
-
-    print_progress(f"Rendering report in {output_dir}")
-    config_path = build_report_config(output_dir, annotations_path, args.h5ad)
-    template_path = ensure_report_template(output_dir)
-    env = dict(os.environ)
-    env["CLUSTER_IDENTIFY_OUTPUT_DIR"] = str(output_dir)
-    env["CLUSTER_IDENTIFY_CONFIG_PATH"] = str(config_path)
-
-    if shutil.which("quarto") is None:
-        fail("Quarto is not installed or not available on PATH")
-
-    pdf_path = run_quarto(template_path, output_dir, env, "pdf", "cluster_identity_report.pdf")
-    md_path = run_quarto(template_path, output_dir, env, "gfm", "cluster_identity_report.md")
-    write_json({"pdf_report": str(pdf_path), "markdown_report": str(md_path)})
-
-
 def command_write(args) -> None:
     pd = load_pandas_module()
     adata = load_h5ad(args.h5ad_path)
@@ -909,12 +815,6 @@ def build_parser() -> argparse.ArgumentParser:
     tf_parser.add_argument("--organism", required=True)
     tf_parser.add_argument("--output-dir")
     tf_parser.set_defaults(func=command_tf)
-
-    report_parser = subparsers.add_parser("report", help="Render report with Quarto")
-    report_parser.add_argument("output_dir")
-    report_parser.add_argument("--annotations", required=True)
-    report_parser.add_argument("--h5ad")
-    report_parser.set_defaults(func=command_report)
 
     write_parser = subparsers.add_parser("write", help="Write annotations back to h5ad")
     write_parser.add_argument("h5ad_path")

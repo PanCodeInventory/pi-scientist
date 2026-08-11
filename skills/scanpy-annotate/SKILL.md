@@ -44,13 +44,12 @@ For complex, novel, or ambiguous populations, use the evidence-driven pipeline a
 
 **Two analysis modes**:
 - **Mode A — Cell Type Identification**: DEGs per cluster → biological inference → independent expression validation → annotated h5ad
-- **Mode B — Subpopulation Characterization**: DEGs → GO/KEGG enrichment + pathway scoring (ssGSEA) + TF activity (decoupler) → functional profile report
+- **Mode B — Subpopulation Characterization**: DEGs → GO/KEGG enrichment + pathway scoring (ssGSEA) + TF activity (decoupler) → functional profile
 
 ### Environment
 
 ```bash
 pip install scanpy anndata gseapy decoupler
-# For PDF reports: quarto install tinytex
 ```
 
 ### Step 0: Inspect Data and Ask User
@@ -158,15 +157,6 @@ Create an `annotations.csv` with columns:
 - `confidence`: high / medium / needs_review
 - `evidence`: brief evidence chain
 - `representative_genes`: validation genes used
-
-Then generate the report:
-
-```bash
-python scripts/cluster_identify.py report <output_dir> \
-  --annotations annotations.csv --h5ad <h5ad_path>
-```
-
-Generates `cluster_identity_report.pdf` and `cluster_identity_report.md`.
 
 Present the annotation results to the user. **Do NOT automatically write back.**
 
