@@ -7,7 +7,7 @@ description: Creates persistent, methodology-focused bioinformatics task documen
 
 Use this skill as the **main Scientist agent** to turn mandatory Scout findings, any relevant evidence optionally retrieved with `sci_librarian`, the confirmed Shared Scientific Contract, and the user-confirmed analysis directory into a persistent Markdown task document. `sci_librarian` is not a prerequisite for planning; include its evidence only when the main agent chose to retrieve it for a concrete evidence gap.
 
-The task document drives worker/reviewer execution. The final narrative report is **not** a subagent step: after every analysis step in the Todolist has passed review, write the report as the main agent and then create a git commit.
+The task document drives worker/reviewer execution. The final narrative report is **not** a subagent step and is **not** automatic: after every analysis step in the Todolist has passed review, the main agent summarizes completion, and the user runs `/generate-report` when the results are confirmed.
 
 ## Shared Scientific Contract
 
@@ -30,7 +30,7 @@ You operate in one of two modes:
 Brand new analysis from raw data. You design the full pipeline from scratch.
 - Determine all module directories and their sequence.
 - No prior modules to reference.
-- Include a main-agent completion reminder for the final report + git commit, but do **not** add a report step to the Todolist.
+- Include a main-agent completion reminder (summarize + tell the user to run `/generate-report`), but do **not** add a report step to the Todolist.
 - Example: user says "analyze this scRNA-seq data" with no prior context.
 
 ### CONTINUE Mode (延续分析)
@@ -39,7 +39,7 @@ Building on a JUST-COMPLETED analysis. You add new modules to an existing projec
 - The NEW module directory gets the next available NN_ prefix.
 - You MUST reference existing module outputs as inputs for the new steps.
 - You create a NEW plan file (not overwriting the prior one).
-- Include a main-agent completion reminder for the final report + git commit, but do **not** add a report step to the Todolist.
+- Include a main-agent completion reminder (summarize + tell the user to run `/generate-report`), but do **not** add a report step to the Todolist.
 - Example: user says "run DE on these clusters" after completing clustering + annotation.
 
 **Key CONTINUE rule**: Never plan to re-run completed steps. Reuse existing outputs.
@@ -60,7 +60,7 @@ There are three different directory concepts. Do NOT mix them up:
    - Example: `01_Preprocessing/`, `02_Clustering/`, `03_DEG/`.
 
 3. **Final report directory** — `<analysis_parent_dir>/Report/`
-   - Created by the **main agent only** after all Todolist items pass review.
+   - Created on-demand by the **main agent** when the user runs `/generate-report`, after all Todolist items pass review and the results are confirmed.
    - Stores only the final report.
    - Report filename pattern: `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html`.
      - `<TaskID>` MUST match the Task file's Task number prefix, e.g. `Task/Task3-20260528.md` → `Task3`.
@@ -70,7 +70,7 @@ There are three different directory concepts. Do NOT mix them up:
    - It is not an analysis module and must never appear as a worker/reviewer step.
 
 Generated analysis outputs MUST NOT be written under `Task/`. The `Task/` folder is for plan files only.
-Subagents MUST NOT create module-level `README.md` files. The only documentation deliverable is the final HTML report written later by the main agent.
+Subagents MUST NOT create module-level `README.md` files. The only documentation deliverable is the final HTML report, generated later by the main agent when the user runs `/generate-report`.
 
 ## Critical Rule: Write a File
 
@@ -87,7 +87,7 @@ You MUST create a task file. This is NOT optional.
 5. Define one or more analysis module directories using the pattern `<NN>_ModuleName/`.
 6. Write the complete task document to `Task/TaskN-YYYYMMDD.md`.
 7. Do **not** add `99_Report/`, `RFINAL`, `README.md`, or any report-generation step to the Todolist.
-8. After writing, confirm the task file path and analysis module directories, and retain the reminder to write the final report under `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html` after all steps are complete.
+8. After writing, confirm the task file path and analysis module directories, and retain the completion reminder: summarize when all steps pass review, then the user runs `/generate-report` to write `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html`.
 
 ## Required Analysis Module Structure
 
@@ -119,7 +119,7 @@ The file MUST record the analysis parent directory and module directories near t
 > Plan file: `Task/TaskN-YYYYMMDD.md`
 > Analysis modules: `01_Preprocessing/`, `02_Clustering/`, `03_DEG/`
 > Output rule: generated scripts/results stay under the relevant `<NN>_ModuleName/` directory, never under `Task/`; do not create `README.md` or `logs/` directories. Script run logs (tmux) go under `<Module>/tmux/` (indexed by `<Module>/tmux/manifest.jsonl`).
-> Main-agent completion: when every Todolist item is `[x]`, the main agent writes `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html` using the `frontend-design` skill, then runs `git commit`. `TaskID` must match the Task file prefix (e.g. `Task3`). This is not a subagent step.
+> Main-agent completion: when every Todolist item is `[x]`, the main agent summarizes completion to the user. The user then runs `/generate-report` (after confirming/discussing the results) to generate `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html`. `TaskID` must match the Task file prefix (e.g. `Task3`). This is not a subagent step.
 
 ## Goal
 One sentence summary of what this task accomplishes.
@@ -153,10 +153,9 @@ One sentence summary of what this task accomplishes.
 
 When all Todolist items above are marked `[x]`:
 1. Stop dispatching worker/reviewer subagents for this plan.
-2. The **main agent** must use/read the `frontend-design` skill before writing the report.
-3. Write a single self-contained Chinese HTML report to `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html` (example: `Report/Task3-单细胞聚类注释分析-20260528.html`).
-4. Do not create any `README.md` files and do not create `99_Report/`.
-5. After the report is written, run `git status`, stage the relevant analysis files, and create a git commit.
+2. The **main agent** summarizes completion to the user: what was done, key results, and any caveats.
+3. Tell the user that once the results are confirmed and finalized, they can run `/generate-report` to generate `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html` (example: `Report/Task3-单细胞聚类注释分析-20260528.html`). That command synthesizes the analysis results with the session discussion.
+4. Do not create any `README.md` files, do not create `99_Report/`, and do not git commit on your own.
 
 ---
 
@@ -270,7 +269,7 @@ Task/
 02_Clustering/
 └── ...
 
-# Post-completion deliverable generated by the main agent only:
+# Post-completion deliverable, generated on-demand by the main agent when the user runs /generate-report:
 Report/
 └── TaskN-具体内容-YYYYMMDD.html
 ```
@@ -284,20 +283,20 @@ Report/
 - [ ] No `logs/` directories are created by agents (the analysis root `logs/` is runner-only; tmux run logs live under `<Module>/tmux/`)
 - [ ] Figures are publication quality
 - [ ] Statistical tests are appropriate and correctly reported
-- [ ] After all Todolist items pass review, the main agent writes `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html` using `frontend-design` and then commits with git
+- [ ] After all Todolist items pass review, the main agent summarizes completion and tells the user to run `/generate-report` when ready (no automatic report, no automatic git commit)
 ```
 
 ## Why This Structure
 
 1. **Task/** — Plan-only folder. The main agent, worker, and reviewer use it as persistent state.
 2. **<NN>_ModuleName/** — Concrete analysis modules. Each module is self-contained, reproducible, and reviewable.
-3. **Report/** — Final human-facing report, written by the main agent after subagent work is complete.
+3. **Report/** — Final human-facing report, generated on-demand by the main agent when the user runs `/generate-report`, after subagent work is complete and results are confirmed.
 
 This separation means:
 - The main agent reads only `Task/TaskN-YYYYMMDD.md` to track progress
 - The worker reads the module path for the current step and writes outputs there
 - The reviewer checks that all generated files are inside declared module directories and not inside `Task/`
-- The final report is produced once, after all reviewed analysis outputs are available, without involving worker/reviewer subagents
+- The final report is produced once, on-demand via `/generate-report` after all reviewed analysis outputs are available and the user confirms, without involving worker/reviewer subagents
 
 ## Skill References
 
@@ -314,9 +313,9 @@ Common assignments:
 - Cell communication → `scanpy-cellcommunication`
 - Transcription factor analysis → `pyscenic-single-cell-analysis`
 - Spatial analysis → `squidpy-analysis` or `spatial-commot`
-- Final report writing → `frontend-design` (**main agent only; do not create a worker/reviewer step for this**)
+- Final report writing → triggered by the user via `/generate-report` (main agent only; do not create a worker/reviewer step for this). The agent follows the HTML template at `skills/analysis-planning/references/report-template.html`.
 
-## Final Report (Main Agent Only)
+## Final Report (On-Demand, Main Agent Only)
 
 **Do NOT create a final report step.** Plans MUST NOT contain:
 - `RFINAL`
@@ -327,28 +326,34 @@ Common assignments:
 
 Instead, every plan MUST contain the **Main-Agent Completion Reminder** section shown above.
 
-After all Todolist items pass review, you will, as the main agent:
+The report is **not** generated automatically when analysis finishes. The flow is:
 
-1. Use/read the `frontend-design` skill before writing the report.
-2. Create `Report/` if needed.
-3. Write **only one final documentation deliverable**:
+1. All Todolist items pass review → the main agent **summarizes** completion to the user (what was done, key results, caveats) and stops. It does NOT write the report and does NOT git commit.
+2. The user reviews, discusses, and requests adjustments as needed.
+3. When the results are confirmed and finalized, the user runs **`/generate-report`**. That command instructs the main agent to synthesize the analysis results together with the session discussion, then write the report.
+
+When `/generate-report` runs, the main agent:
+
+1. Reads the HTML report template at `skills/analysis-planning/references/report-template.html` and follows its structure and styling (black-and-white academic layout, numbered sections, booktabs tables, numbered figure captions). It replaces the demo data with real content and removes the placeholder-generating script, swapping each `<svg>` for a real base64 image.
+2. Creates `Report/` if needed.
+3. Writes **only one final documentation deliverable**:
    - `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html` — self-contained Chinese HTML report.
    - Naming example: if the plan file is `Task/Task3-20260528.md` and the content summary is `单细胞聚类注释分析`, write `Report/Task3-单细胞聚类注释分析-20260528.html`.
-4. Do **not** create any `README.md` files.
-5. Run `git status`, stage relevant files, and create a git commit.
+4. Does **not** create any `README.md` files.
+5. Does **not** git commit on its own — it reports the report path and lets the user decide.
 
 Report requirements:
 - Filename must follow `TaskID-具体内容-日期.html`; use the Task file's Task number prefix as `TaskID`, keep the content part short and filename-safe, and use `YYYYMMDD` for the date.
 - Self-contained HTML: all images embedded as `data:image/png;base64,...`; no external dependencies.
 - Chinese language throughout.
-- Suggested chapters:
+- Must contain the four chapters (mirroring the template):
   1. **分析思路与方法选择** — 为什么选这些方法、与其他候选的对比、关键参数依据
   2. **核心结论** — 最重要的发现，用数据说话
   3. **图片详解** — 每张图配一段解读：展示了什么、关键信息在哪里、生物学含义
   4. **文件与复现索引** — 模块目录、关键脚本、配置、结果表和图的位置
-- Visual design must follow `frontend-design`; the main agent must load the skill content before creating the HTML.
+- Visual design follows the bundled HTML template; the main agent must read the template before creating the report.
 
-**NEW and CONTINUE mode**: both modes include the reminder, but neither mode adds a report step to the Todolist. In CONTINUE mode, the final report should summarize the current project state and emphasize the newly completed incremental module(s).
+**NEW and CONTINUE mode**: both modes include the completion reminder, but neither mode adds a report step to the Todolist. In CONTINUE mode, the report should summarize the current project state and emphasize the newly completed incremental module(s).
 
 ## Long-running Steps and Tmux
 
@@ -423,5 +428,5 @@ Summary: [1-2 sentence summary]
 Total analysis steps: N
 Estimated complexity: [Low/Medium/High]
 
-Next action: Call sci_implement with planFile="Task/TaskN-YYYYMMDD.md" and cwd="/absolute/analysis_parent_dir" until all Todolist items are [x]. Then the main agent must use frontend-design to write Report/TaskN-具体内容-YYYYMMDD.html and create a git commit.
+Next action: Call sci_implement with planFile="Task/TaskN-YYYYMMDD.md" and cwd="/absolute/analysis_parent_dir" until all Todolist items are [x]. Then the main agent summarizes completion; the user runs `/generate-report` to write Report/TaskN-具体内容-YYYYMMDD.html when ready.
 ```

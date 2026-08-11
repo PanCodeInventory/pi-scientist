@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerReflectCommand } from "./core/commands.js";
+import { registerGenerateReportCommand, registerReflectCommand } from "./core/commands.js";
 import { registerScientificDialogue } from "./dialogue/index.js";
 import { SCIENTIST_ENFORCEMENT } from "./core/enforcement.js";
 import { registerScientistWorkflowTools } from "./tools/index.js";
@@ -46,6 +46,7 @@ function injectEnforcement(prompt: string): string {
 
 export default function (pi: ExtensionAPI): void {
 	registerScientificDialogue(pi);
+	registerGenerateReportCommand(pi);
 	registerReflectCommand(pi);
 	registerScientistWorkflowTools(pi);
 	registerLibrarianTool(pi);

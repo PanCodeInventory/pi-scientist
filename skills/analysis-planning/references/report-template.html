@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<!--
+ ============================================================================
+  Scientist · 最终分析报告 HTML 模板（简洁版）
+  定位：一份干净的黑白分析汇报。纯白底、宋体正文 + 黑体标题、编号章节、
+        三线表、编号图注。无动画、无装饰、无需前端设计技能。
+  用法：由主 agent 在所有分析步骤通过 review 后生成，文件名遵循
+        Report/<TaskID>-<具体内容>-<YYYYMMDD>.html，自包含（图片 base64 内嵌）。
+  填充：本文件为含 PBMC 演示数据的预览。真实报告应——
+        1) 删除底部那段脚本，将各 figure 内的 <svg> 替换为
+           <img src="data:image/png;base64,...">；
+        2) 替换标题、摘要、数字、表格、图注、路径为真实内容。
+ ============================================================================
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PBMC 单细胞转录组聚类与细胞类型注释分析</title>
+<style>
+	:root {
+		--ink:       #000000;
+		--text:      #1a1a1a;
+		--muted:     #6a6a6a;
+		--rule:      #000000;
+		--rule-soft: #d4d4d4;
+		--bg-soft:   #f6f6f6;
+
+		--serif: "Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong",
+		         "SimSun","Times New Roman",Georgia,serif;
+		--sans:  "Source Han Sans SC","Noto Sans CJK SC","PingFang SC",
+		         "Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+		--mono:  "JetBrains Mono","SF Mono","Source Code Pro","Menlo","Consolas",monospace;
+
+		--measure: 820px;
+	}
+
+	*, *::before, *::after { box-sizing: border-box; }
+	html { scroll-behavior: smooth; }
+	body {
+		margin: 0;
+		background: #ffffff;
+		color: var(--text);
+		font-family: var(--serif);
+		font-size: 16px;
+		line-height: 1.85;
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+
+	.page {
+		max-width: var(--measure);
+		margin: 0 auto;
+		padding: 48px 32px 64px;
+	}
+
+	/* ---------- 标题区 ---------- */
+	h1.report-title {
+		font-family: var(--serif);
+		font-weight: 700;
+		font-size: 1.9rem;
+		line-height: 1.4;
+		margin: 0 0 12px;
+		color: var(--ink);
+	}
+	.report-subtitle {
+		font-family: var(--sans);
+		font-size: 0.85rem;
+		color: var(--muted);
+		margin: 0;
+	}
+
+	hr.rule {
+		border: none;
+		border-top: 1px solid var(--rule);
+		margin: 26px 0;
+	}
+
+	/* ---------- 摘要 ---------- */
+	.abstract { margin: 0 0 8px; }
+	.abstract .label {
+		font-family: var(--sans);
+		font-weight: 700;
+		font-size: 0.9rem;
+		color: var(--ink);
+		margin-bottom: 6px;
+	}
+	.abstract p {
+		margin: 0;
+		font-size: 0.95rem;
+		line-height: 1.9;
+		color: var(--text);
+		text-align: justify;
+	}
+
+	/* ---------- 关键数据 ---------- */
+	.keystats {
+		display: flex;
+		flex-wrap: wrap;
+		border-top: 1px solid var(--rule-soft);
+		border-bottom: 1px solid var(--rule-soft);
+		margin: 28px 0 8px;
+		padding: 16px 0;
+	}
+	.keystats .stat {
+		flex: 1 1 25%;
+		min-width: 120px;
+		padding: 2px 18px;
+	}
+	.keystats .stat + .stat { border-left: 1px solid var(--rule-soft); }
+	.keystats .num {
+		font-family: var(--serif);
+		font-size: 1.55rem;
+		font-weight: 700;
+		line-height: 1;
+		color: var(--ink);
+	}
+	.keystats .num small { font-size: 0.6em; font-weight: 400; color: var(--muted); margin-left: 3px; }
+	.keystats .cap {
+		font-family: var(--sans);
+		font-size: 0.72rem;
+		color: var(--muted);
+		margin-top: 7px;
+	}
+
+	/* ---------- 目录 ---------- */
+	nav.toc { margin: 28px 0 36px; }
+	nav.toc .toc-label {
+		font-family: var(--sans);
+		font-weight: 700;
+		font-size: 0.9rem;
+		color: var(--ink);
+		margin-bottom: 8px;
+	}
+	nav.toc ol {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	nav.toc li { padding: 2px 0; }
+	nav.toc a {
+		font-family: var(--sans);
+		font-size: 0.88rem;
+		color: var(--text);
+		text-decoration: none;
+		display: flex;
+	}
+	nav.toc a .idx {
+		font-variant-numeric: tabular-nums;
+		color: var(--muted);
+		width: 2em;
+		flex-shrink: 0;
+	}
+	nav.toc a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+	/* ---------- 章节编号 ---------- */
+	body { counter-reset: sec figure; }
+	section { padding: 16px 0 8px; }
+	section h2 {
+		font-family: var(--sans);
+		font-weight: 700;
+		font-size: 1.2rem;
+		margin: 34px 0 18px;
+		padding-bottom: 8px;
+		border-bottom: 1px solid var(--rule);
+		counter-increment: sec;
+		counter-reset: subsec;
+	}
+	section h2::before {
+		content: counter(sec) "  ";
+		color: var(--muted);
+		font-weight: 400;
+	}
+	h3 {
+		font-family: var(--sans);
+		font-weight: 700;
+		font-size: 1rem;
+		margin: 26px 0 10px;
+		counter-increment: subsec;
+	}
+	h3::before {
+		content: counter(sec) "." counter(subsec) "  ";
+		color: var(--muted);
+		font-weight: 400;
+	}
+
+	/* ---------- 正文 ---------- */
+	p { margin: 0 0 1.05em; text-align: justify; }
+	strong { font-weight: 700; color: var(--ink); }
+	.term {
+		font-family: var(--mono);
+		font-size: 0.86em;
+		background: var(--bg-soft);
+		padding: 1px 5px;
+		color: var(--ink);
+	}
+
+	/* 要点块（参数依据 / 复现命令等） */
+	aside.note {
+		font-family: var(--sans);
+		font-size: 0.84rem;
+		line-height: 1.75;
+		background: var(--bg-soft);
+		padding: 12px 16px;
+		margin: 18px 0;
+		color: var(--text);
+	}
+	aside.note .tag {
+		font-weight: 700;
+		color: var(--ink);
+		margin-right: 6px;
+	}
+
+	/* ---------- 三线表 ---------- */
+	.table-wrap { margin: 20px 0; overflow-x: auto; }
+	table.booktabs {
+		border-collapse: collapse;
+		width: 100%;
+		font-family: var(--sans);
+		font-size: 0.86rem;
+	}
+	table.booktabs thead th {
+		border-top: 2px solid var(--ink);
+		border-bottom: 1px solid var(--ink);
+		padding: 9px 10px;
+		text-align: left;
+		font-weight: 700;
+		color: var(--ink);
+	}
+	table.booktabs tbody td {
+		border-bottom: 1px solid var(--rule-soft);
+		padding: 8px 10px;
+		color: var(--text);
+		vertical-align: top;
+	}
+	table.booktabs tbody tr:last-child td { border-bottom: 2px solid var(--ink); }
+	table.booktabs td.num, table.booktabs th.num {
+		font-variant-numeric: tabular-nums; text-align: right;
+	}
+	table.booktabs caption {
+		caption-side: top;
+		text-align: left;
+		font-family: var(--sans);
+		font-size: 0.8rem;
+		color: var(--muted);
+		padding-bottom: 8px;
+	}
+	table.booktabs caption b { color: var(--ink); font-weight: 700; margin-right: 6px; }
+
+	/* ---------- 图 ---------- */
+	figure { margin: 30px 0; counter-increment: figure; }
+	.figure-frame {
+		border: 1px solid var(--rule-soft);
+		background: #fff;
+		padding: 18px 16px 10px;
+	}
+	.figure-frame svg { display: block; width: 100%; height: auto; }
+	figcaption {
+		font-family: var(--sans);
+		font-size: 0.84rem;
+		line-height: 1.7;
+		color: var(--text);
+		padding: 10px 2px 0;
+	}
+	figcaption .fnum { font-weight: 700; color: var(--ink); margin-right: 8px; }
+	figcaption .ftitle { font-weight: 700; color: var(--ink); }
+	figcaption .fread {
+		display: block;
+		margin-top: 5px;
+		color: var(--muted);
+		font-size: 0.8rem;
+	}
+	figcaption .fread b { color: var(--text); font-weight: 700; }
+
+	/* ---------- 代码 / 目录树 ---------- */
+	pre.tree {
+		font-family: var(--mono);
+		background: var(--bg-soft);
+		border: 1px solid var(--rule-soft);
+		padding: 14px 16px;
+		font-size: 0.8rem;
+		line-height: 1.65;
+		color: var(--text);
+		overflow-x: auto;
+		margin: 18px 0;
+		white-space: pre;
+	}
+	pre.tree b { color: var(--ink); font-weight: 700; }
+	pre.tree i { color: var(--muted); font-style: normal; }
+
+	/* ---------- 页脚 ---------- */
+	footer.colophon {
+		margin-top: 48px;
+		padding-top: 18px;
+		border-top: 1px solid var(--rule);
+		font-family: var(--sans);
+		font-size: 0.76rem;
+		color: var(--muted);
+	}
+
+	@media print {
+		body { font-size: 11pt; }
+		.page { max-width: 100%; padding: 0; }
+		.figure-frame, nav.toc, pre.tree, figure, section { break-inside: avoid; }
+		a { color: var(--ink); text-decoration: none; }
+	}
+
+	@media (max-width: 560px) {
+		.page { padding: 28px 18px 40px; }
+		h1.report-title { font-size: 1.5rem; }
+		.keystats .stat { flex-basis: 50%; }
+	}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+<!-- ============================ 标题区 ============================ -->
+<h1 class="report-title">PBMC 单细胞转录组聚类与细胞类型注释分析</h1>
+<p class="report-subtitle">2026.05.28</p>
+
+<hr class="rule">
+
+<!-- ============================ 摘要 ============================ -->
+<div class="abstract">
+	<div class="label">摘要</div>
+	<p>本研究对 3 例健康供者外周血单个核细胞（PBMC）开展单细胞 RNA 测序分析。经严格质控保留 8,392 个高质量细胞，基于高变基因主成分与 Leiden 算法鉴定出 12 个细胞亚群，并通过独立的标记基因表达验证完成细胞类型注释。分析刻画了 T/B/髓系/NK 四大谱系的主要亚群及其特征性标记基因，CD4 与 CD8 T 细胞的 naïve/记忆/效应连续分化谱尤为清晰，为后续细胞间通讯与转录因子调控网络研究奠定了可靠的细胞图谱基础。</p>
+</div>
+
+<!-- ============================ 关键数据 ============================ -->
+<div class="keystats">
+	<div class="stat"><div class="num">8,392</div><div class="cap">高质量细胞</div></div>
+	<div class="stat"><div class="num">12</div><div class="cap">细胞亚群</div></div>
+	<div class="stat"><div class="num">20,126</div><div class="cap">检测基因</div></div>
+	<div class="stat"><div class="num">3 <small>例</small></div><div class="cap">生物学重复</div></div>
+</div>
+
+<!-- ============================ 目录 ============================ -->
+<nav class="toc">
+	<div class="toc-label">目录</div>
+	<ol id="toc-list"></ol>
+</nav>
+
+<!-- ============================ §1 分析思路 ============================ -->
+<section id="sec-methods">
+	<h2>分析思路与方法选择</h2>
+
+	<p>整体流程遵循 <span class="term">scanpy-prep → scanpy-cluster → scanpy-annotate</span> 的标准范式：先以 scanpy-prep 完成质控、归一化与高变基因选择，再在 scanpy-cluster 中降维聚类并识别标记基因，最后由 scanpy-annotate 的 cluster-identify 流水线完成证据驱动的细胞类型鉴定。每一步关键参数的选取均有明确依据，而非沿用默认值。</p>
+
+	<h3>数据预处理与质控</h3>
+	<p>质控采用三重过滤策略：<strong>n_genes_by_counts</strong> 介于 200–6,000 之间以剔除低质量细胞与潜在双胞；<strong>线粒体基因比例</strong> 阈值设为 15%，兼顾去污染与保留高代谢活性细胞；<strong>基因表达细胞数</strong> 下限为 3。归一化采用 <span class="term">sc.pp.normalize_total</span> + <span class="term">log1p</span>，原始计数存入 <span class="term">adata.raw</span> 供后续可视化与差异分析使用。</p>
+	<aside class="note"><span class="tag">参数依据</span>线粒体比例取 15% 而非常见的 10%，是因为本研究关注包含高代谢活性细胞的亚群（如活化 T 细胞、树突状细胞），过严的阈值会系统性丢失这些真实存在的群体。该取舍经小提琴图人工复核后确认。</aside>
+
+	<h3>降维、邻接图与聚类</h3>
+	<p>选取 4,000 个高变基因后执行 PCA，依据肘部图保留前 50 个主成分；以 <span class="term">neighbors(n_neighbors=15, n_pcs=40)</span> 构建 KNN 邻接图，UMAP 用于二维可视化。Leiden 聚类的分辨率经 0.3 / 0.5 / 0.8 / 1.0 四档比较后定为 <strong>0.5</strong>。</p>
+
+	<div class="table-wrap">
+		<table class="booktabs">
+			<caption><b>表 1</b>Leiden 分辨率选择对比</caption>
+			<thead><tr><th>分辨率</th><th>簇数</th><th class="num">轮廓系数</th><th>可解释性</th><th>取舍</th></tr></thead>
+			<tbody>
+				<tr><td>0.3</td><td>7</td><td class="num">0.41</td><td>谱系级，亚型合并</td><td>过粗</td></tr>
+				<tr><td>0.5</td><td>12</td><td class="num">0.38</td><td>主要亚型可辨</td><td><strong>采用</strong></td></tr>
+				<tr><td>0.8</td><td>19</td><td class="num">0.31</td><td>过度分裂</td><td>过细</td></tr>
+				<tr><td>1.0</td><td>24</td><td class="num">0.27</td><td>碎屑簇增多</td><td>舍弃</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<h3>细胞类型注释策略</h3>
+	<p>采用两级策略：首先以经典 marker 进行快速人工映射锁定主谱系，再对每个簇调用 <span class="term">cluster_identify.py</span> 的 <span class="term">deg → validate</span> 流程，以独立于差异分析的标记基因表达（点图、小提琴图、UMAP 特征图）交叉验证推断结果。差异检验方法在 Wilcoxon 与 t-test 之间的取舍如下。</p>
+
+	<div class="table-wrap">
+		<table class="booktabs">
+			<caption><b>表 2</b>差异表达检验方法对比</caption>
+			<thead><tr><th>方法</th><th>假设</th><th>鲁棒性</th><th>本项目取舍</th></tr></thead>
+			<tbody>
+				<tr><td>Wilcoxon 秩和</td><td>非参数</td><td>对非正态表达稳健</td><td><strong>采用</strong></td></tr>
+				<tr><td>t-test</td><td>参数、正态</td><td>灵敏但易受离群值影响</td><td>用于交叉核对</td></tr>
+				<tr><td>MAST（Hurdle）</td><td>零膨胀混合</td><td>最严谨、计算量大</td><td>关键簇复核</td></tr>
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<!-- ============================ §2 核心结论 ============================ -->
+<section id="sec-findings">
+	<h2>核心结论</h2>
+
+	<p>基于上述流程，本研究在 PBMC 中稳定刻画出四大谱系共 12 个细胞亚群，各亚群均有清晰的标记基因支撑且通过独立表达验证。其中 T 细胞谱系占比最高（约 64%），并呈现出 naïve → 记忆 → 效应的连续分化轨迹。</p>
+
+	<div class="table-wrap">
+		<table class="booktabs">
+			<caption><b>表 3</b>细胞亚群注释汇总（置信度与特征基因）</caption>
+			<thead><tr><th>簇</th><th>注释</th><th>谱系</th><th class="num">细胞数</th><th>置信度</th><th>特征基因</th></tr></thead>
+			<tbody>
+				<tr><td>C0</td><td>CD4⁺ Naïve T</td><td>T</td><td class="num">1,842</td><td>高</td><td>CCR7, LEF1, TCF7</td></tr>
+				<tr><td>C1</td><td>CD4⁺ 记忆 T</td><td>T</td><td class="num">1,376</td><td>高</td><td>IL7R, S100A4</td></tr>
+				<tr><td>C2</td><td>CD14⁺ 单核细胞</td><td>髓系</td><td class="num">1,204</td><td>高</td><td>CD14, LYZ, S100A9</td></tr>
+				<tr><td>C3</td><td>B 细胞</td><td>B</td><td class="num">968</td><td>高</td><td>MS4A1, CD79A, CD79B</td></tr>
+				<tr><td>C4</td><td>CD8⁺ 效应 T</td><td>T</td><td class="num">873</td><td>高</td><td>NKG7, GNLY, CCL5</td></tr>
+				<tr><td>C5</td><td>NK 细胞</td><td>NK</td><td class="num">612</td><td>中</td><td>GNLY, NKG7, KLRD1</td></tr>
+				<tr><td>C6</td><td>FCGR3A⁺ 单核细胞</td><td>髓系</td><td class="num">478</td><td>中</td><td>FCGR3A, MS4A7</td></tr>
+				<tr><td>…</td><td>其余 5 簇</td><td>—</td><td class="num">1,039</td><td>—</td><td>详见 annotations.csv</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<p>三个值得关注的发现：<strong>其一</strong>，CD4 与 CD8 T 细胞的 naïve/记忆/效应亚群在 UMAP 上呈连续过渡而非离散块状，提示后续可考虑伪时序分析；<strong>其二</strong>，C5（NK）与 C4（CD8 效应）共享 NKG7/GNLY 但在 KLRD1 与 CD8A 上分离，注释置信度中等、建议人工复核；<strong>其三</strong>，未检测到明显的双胞污染簇或批次效应驱动的伪簇，质控与整合策略有效。</p>
+</section>
+
+<!-- ============================ §3 图片详解 ============================ -->
+<section id="sec-figures">
+	<h2>图片详解</h2>
+	<p>下面对四张关键图逐一解读。每张图标注其展示内容、关键信息所在位置与对应的生物学含义。</p>
+
+	<figure>
+		<div class="figure-frame">
+			<svg viewBox="0 0 720 230" id="qc-fig" role="img" aria-label="质控指标分布"></svg>
+		</div>
+		<figcaption>
+			<span class="fnum">图 1</span><span class="ftitle">质控指标分布</span>（n_genes_by_counts / total_counts / pct_counts_mt）
+			<span class="fread"><b>展示了什么：</b>三个指标在过滤前后的分布与阈值线。<b>关键信息：</b>线粒体比例分布右尾在 15% 处截断，n_genes 主峰位于 1,500–2,500，无异常双峰。<b>生物学含义：</b>剔除的细胞确属低质量/破损细胞，未被误删高代谢亚群。</span>
+		</figcaption>
+	</figure>
+
+	<figure>
+		<div class="figure-frame">
+			<svg viewBox="0 0 560 440" id="umap-fig" role="img" aria-label="UMAP 聚类可视化"></svg>
+		</div>
+		<figcaption>
+			<span class="fnum">图 2</span><span class="ftitle">UMAP 聚类与注释</span>（Leiden res=0.5，12 个亚群）
+			<span class="fread"><b>展示了什么：</b>12 个 Leiden 簇在 UMAP 二维投影上的空间分布与注释标签。<b>关键信息：</b>左上 T 细胞主团内 CD4/CD8 连续过渡；右下髓系单核与 B 细胞清晰分离；C5 NK 介于 T 与髓系之间。<b>生物学含义：</b>空间邻接关系与谱系发生一致，未见批次驱动的离群簇。</span>
+		</figcaption>
+	</figure>
+
+	<figure>
+		<div class="figure-frame">
+			<svg viewBox="0 0 620 420" id="dot-fig" role="img" aria-label="标记基因点图"></svg>
+		</div>
+		<figcaption>
+			<span class="fnum">图 3</span><span class="ftitle">标记基因 Dot Plot</span>（行：基因，列：簇；点大小=平均表达，深浅=表达比例）
+			<span class="fread"><b>展示了什么：</b>8 个谱系 marker 在 12 个簇中的表达与比例。<b>关键信息：</b>CD3D/CD4 富集于 C0/C1，MS4A1 仅在 C3，CD14/LYZ 在 C2/C6，NKG7/GNLY 在 C4/C5。<b>生物学含义：</b>每个 marker 在其归属簇特异高表达、其余簇低表达，注释结果得到独立验证。</span>
+		</figcaption>
+	</figure>
+
+	<figure>
+		<div class="figure-frame">
+			<svg viewBox="0 0 620 440" id="heat-fig" role="img" aria-label="差异基因热图"></svg>
+		</div>
+		<figcaption>
+			<span class="fnum">图 4</span><span class="ftitle">Top 差异基因热图</span>（每簇 Top 8 DEG，行 z-score 标准化）
+			<span class="fread"><b>展示了什么：</b>各簇 Top 差异表达基因的表达模式。<b>关键信息：</b>沿对角线呈现清晰的块状高表达，簇间区分度高；C5 与 C4 共享杀伤性基因模块但各自保留特异基因。<b>生物学含义：</b>聚类结果在分子层面自洽，簇边界可靠。</span>
+		</figcaption>
+	</figure>
+</section>
+
+<!-- ============================ §4 复现索引 ============================ -->
+<section id="sec-repro">
+	<h2>文件与复现索引</h2>
+	<p>以下为本次分析的项目结构、关键脚本与核心结果文件索引，便于审阅与复现。所有产物均落在声明的模块目录下，未在 Task/ 内生成中间文件。</p>
+
+	<h3>项目目录结构</h3>
+<pre class="tree"><b>Task3-20260528/</b>
+├── <b>00_QC/</b>                  <i># 质控：过滤、双胞、线粒体</i>
+│   ├── qc.py
+│   └── qc_metrics.csv
+├── <b>01_Clustering/</b>           <i># 降维、邻接图、Leiden、UMAP</i>
+│   ├── cluster.py
+│   ├── resolution_scan.csv
+│   └── leiden_0.5.h5ad
+├── <b>02_Annotate/</b>             <i># cluster-identify 注释</i>
+│   ├── deg/                     <i># 每簇差异基因表</i>
+│   ├── validation_plots/        <i># 点图 / 小提琴 / 特征 UMAP</i>
+│   ├── annotations.csv          <i># 注释主表</i>
+│   └── annotated.h5ad           <i># 写回注释的 AnnData</i>
+└── <b>Report/</b>
+    └── Task3-单细胞聚类注释分析-20260528.html   <i># 本报告</i>
+</pre>
+
+	<h3>关键脚本与配置</h3>
+	<div class="table-wrap">
+		<table class="booktabs">
+			<caption><b>表 4</b>关键脚本索引</caption>
+			<thead><tr><th>模块</th><th>脚本</th><th>用途</th><th>关键参数</th></tr></thead>
+			<tbody>
+				<tr><td>00_QC</td><td><span class="term">qc.py</span></td><td>质控过滤</td><td>min_genes=200, max_genes=6000, mt&lt;15%</td></tr>
+				<tr><td>01_Clustering</td><td><span class="term">cluster.py</span></td><td>降维聚类</td><td>n_pcs=50, n_neighbors=15, res=0.5</td></tr>
+				<tr><td>02_Annotate</td><td><span class="term">cluster_identify.py deg</span></td><td>差异表达</td><td>--cluster-col leiden, method=wilcoxon</td></tr>
+				<tr><td>02_Annotate</td><td><span class="term">cluster_identify.py validate</span></td><td>标记验证</td><td>--gene-groups "C0=CD3D,CD4,CCR7" ...</td></tr>
+				<tr><td>02_Annotate</td><td><span class="term">cluster_identify.py write</span></td><td>注释写回</td><td>--output annotated.h5ad</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<h3>核心结果文件</h3>
+	<div class="table-wrap">
+		<table class="booktabs">
+			<caption><b>表 5</b>核心结果文件索引</caption>
+			<thead><tr><th>文件</th><th>位置</th><th>说明</th></tr></thead>
+			<tbody>
+				<tr><td>归一化 AnnData</td><td><span class="term">01_Clustering/leiden_0.5.h5ad</span></td><td>含 Leiden/UMAP/RAW</td></tr>
+				<tr><td>注释 AnnData</td><td><span class="term">02_Annotate/annotated.h5ad</span></td><td>含 cluster_identity 列</td></tr>
+				<tr><td>注释主表</td><td><span class="term">02_Annotate/annotations.csv</span></td><td>簇→身份/置信度/证据/基因</td></tr>
+				<tr><td>验证图</td><td><span class="term">02_Annotate/validation_plots/*.pdf</span></td><td>点图/小提琴/特征UMAP</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<aside class="note"><span class="tag">复现命令</span>按模块顺序执行各脚本即可完整复现：自 <span class="term">qc.py</span> 读入原始 10x 矩阵，依次生成中间 h5ad，最终由 <span class="term">cluster_identify.py write</span> 产出带注释的 <span class="term">annotated.h5ad</span>。所有随机步骤均设 <span class="term">random_state=0</span>。</aside>
+</section>
+
+<footer class="colophon">
+	Scientist · Bioinformatics Workflow Extension · Task3 · 8,392 cells · 12 clusters
+</footer>
+
+</div><!-- /.page -->
+
+<script>
+/* ============================ 演示图生成（仅占位预览用） ============================
+   真实报告中删除底部这段脚本，将各 figure 内的 <svg> 替换为
+   <img src="data:image/png;base64,...">。                                   */
+const SVGNS = "http://www.w3.org/2000/svg";
+const GRAYS = ["#1a1a1a","#3a3a3a","#5a5a5a","#7a7a7a","#9a9a9a","#b5b5b5","#2b2b2b","#6a6a6a"];
+function el(name, attrs){
+	const e = document.createElementNS(SVGNS, name);
+	for (const k in attrs) e.setAttribute(k, attrs[k]);
+	return e;
+}
+function gauss(mu, sd){
+	let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random();
+	return mu + sd*Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+/* 图1：QC 三联直方图 */
+(function(){
+	const svg = document.getElementById("qc-fig"); if(!svg) return;
+	const panels = [
+		{title:"n_genes_by_counts", mu:2000, sd:650, lo:200, hi:6000, cut:[200,6000]},
+		{title:"total_counts",       mu:5200, sd:1900, lo:300, hi:20000, cut:null},
+		{title:"pct_counts_mt",      mu:6,    sd:3,    lo:0,  hi:40,    cut:[null,15]},
+	];
+	const W=720,H=230, padL=44, padB=34, padT=18, gap=24;
+	const pw = (W - padL - gap*(panels.length-1)) / panels.length;
+	panels.forEach((p,i)=>{
+		const px = padL + i*(pw+gap);
+		const bins=24, counts=new Array(bins).fill(0);
+		for(let s=0;s<1200;s++){ const v=gauss(p.mu,p.sd); if(v<p.lo||v>p.hi)continue;
+			const b=Math.min(bins-1,Math.floor((v-p.lo)/(p.hi-p.lo)*bins)); counts[b]++; }
+		const maxc=Math.max(...counts), plotH=H-padB-padT, bw=pw/bins;
+		counts.forEach((c,b)=>{
+			const h=c/maxc*plotH;
+			svg.appendChild(el("rect",{x:px+b*bw, y:padT+plotH-h, width:bw*0.86, height:h, fill:"#1a1a1a", opacity:0.85}));
+		});
+		if(p.cut) p.cut.forEach(c=>{ if(c==null) return;
+			const x=px+(c-p.lo)/(p.hi-p.lo)*pw;
+			svg.appendChild(el("line",{x1:x,y1:padT,x2:x,y2:padT+plotH, stroke:"#000","stroke-width":1.2,"stroke-dasharray":"4 3"})); });
+		svg.appendChild(el("line",{x1:px,y1:padT+plotH,x2:px+pw,y2:padT+plotH,stroke:"#111","stroke-width":1}));
+		svg.appendChild(el("line",{x1:px,y1:padT,x2:px,y2:padT+plotH,stroke:"#111","stroke-width":1}));
+		const t=el("text",{x:px+pw/2,y:H-16,"text-anchor":"middle","font-family":"Source Han Sans SC, sans-serif","font-size":11,fill:"#444"});
+		t.textContent=p.title; svg.appendChild(t);
+	});
+})();
+
+/* 图2：UMAP 散点 */
+(function(){
+	const svg=document.getElementById("umap-fig"); if(!svg) return;
+	const W=560,H=440,pad=30;
+	const clusters=[
+		{cx:170,cy:150,sx:55,sy:42,n:150,l:"C0 CD4⁺Naïve"},
+		{cx:250,cy:210,sx:50,sy:40,n:130,l:"C1 CD4⁺Mem"},
+		{cx:350,cy:175,sx:48,sy:46,n:110,l:"C4 CD8⁺Eff"},
+		{cx:300,cy:300,sx:60,sy:48,n:130,l:"C5 NK"},
+		{cx:430,cy:300,sx:55,sy:50,n:120,l:"C2 CD14⁺Mono"},
+		{cx:450,cy:130,sx:48,sy:45,n:95, l:"C3 B"},
+		{cx:470,cy:395,sx:45,sy:30,n:80, l:"C6 FCGR3A⁺"},
+	];
+	for(let i=0;i<200;i++){
+		svg.appendChild(el("circle",{cx:pad+Math.random()*(W-2*pad),cy:pad+Math.random()*(H-2*pad),r:1.6,fill:"#e4e4e4"}));
+	}
+	clusters.forEach((c,idx)=>{
+		for(let i=0;i<c.n;i++){
+			const x=c.cx+gauss(0,c.sx), y=c.cy+gauss(0,c.sy);
+			svg.appendChild(el("circle",{cx:x,cy:y,r:2.4,fill:GRAYS[idx%GRAYS.length],opacity:0.78}));
+		}
+		svg.appendChild(el("rect",{x:c.cx-34,y:c.cy-22,width:68,height:14,fill:"#fff",opacity:0.85,stroke:"#000","stroke-width":0.5}));
+		const lbl=el("text",{x:c.cx,y:c.cy-11,"text-anchor":"middle","font-family":"Source Han Sans SC, sans-serif","font-size":9.5,"font-weight":700,fill:"#000"});
+		lbl.textContent=c.l; svg.appendChild(lbl);
+	});
+	svg.appendChild(el("text",{x:pad,y:H-6,"font-family":"Source Han Sans SC, sans-serif","font-size":10,fill:"#888"})).textContent="UMAP 1";
+	svg.appendChild(el("text",{x:8,y:pad+10,"font-family":"Source Han Sans SC, sans-serif","font-size":10,fill:"#888"})).textContent="UMAP 2";
+})();
+
+/* 图3：Dot Plot */
+(function(){
+	const svg=document.getElementById("dot-fig"); if(!svg) return;
+	const genes=["CD3D","CD4","CD8A","IL7R","MS4A1","CD79A","CD14","LYZ","NKG7","GNLY"];
+	const clusters=["C0","C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11"];
+	const home={CD3D:[0,1,3,4],CD4:[0,1],CD8A:[3,4],IL7R:[0,1],MS4A1:[5],CD79A:[5],
+	            CD14:[2,6],LYZ:[2,6],NKG7:[3,4,7],GNLY:[3,4,7]};
+	const W=620,H=420, padL=70,padT=24,padB=40,padR=16;
+	const cw=(W-padL-padR)/clusters.length, rh=(H-padT-padB)/genes.length;
+	clusters.forEach((c,ci)=>{
+		genes.forEach((g,gi)=>{
+			const cx=padL+ci*cw+cw/2, cy=padT+gi*rh+rh/2;
+			const hit=(home[g]||[]).includes(ci);
+			const frac=hit?(0.55+Math.random()*0.4):(0.02+Math.random()*0.12);
+			const mean=hit?(0.6+Math.random()*0.35):(0.05+Math.random()*0.15);
+			const r=2+frac*11, op=0.25+mean*0.7;
+			svg.appendChild(el("circle",{cx,cy,r,fill:"#111",opacity:op}));
+		});
+		const t=el("text",{x:padL+ci*cw+cw/2,y:H-padB+16,"text-anchor":"middle","font-family":"Source Han Sans SC, sans-serif","font-size":10,fill:"#555"});
+		t.textContent=c; svg.appendChild(t);
+	});
+	genes.forEach((g,gi)=>{
+		const t=el("text",{x:padL-10,y:padT+gi*rh+rh/2+3,"text-anchor":"end","font-family":"JetBrains Mono, monospace","font-size":11,fill:"#222"});
+		t.textContent=g; svg.appendChild(t);
+	});
+	svg.appendChild(el("text",{x:padL,y:14,"font-family":"Source Han Sans SC, sans-serif","font-size":10,fill:"#888"})).textContent="点大小 = 表达比例　·　深浅 = 平均表达";
+})();
+
+/* 图4：热图 */
+(function(){
+	const svg=document.getElementById("heat-fig"); if(!svg) return;
+	const clusters=8, genesPerCluster=6, totalG=clusters*genesPerCluster;
+	const W=620,H=440, padL=96,padT=18,padB=24,padR=16;
+	const cw=(W-padL-padR)/clusters, ch=(H-padT-padB)/totalG;
+	for(let ci=0; ci<clusters; ci++){
+		for(let gi=0; gi<totalG; gi++){
+			const home=Math.floor(gi/genesPerCluster);
+			const dist=Math.abs(ci-home);
+			let v = dist===0? (0.8+Math.random()*0.2) : dist===1? (0.25+Math.random()*0.2) : (Math.random()*0.12);
+			const x=padL+ci*cw, y=padT+gi*ch;
+			const g=Math.round(240 - v*235);
+			svg.appendChild(el("rect",{x,y,width:cw,height:ch,fill:`rgb(${g},${g},${g})`,stroke:"#fff","stroke-width":0.5}));
+		}
+		const t=el("text",{x:padL+ci*cw+cw/2,y:H-padB+14,"text-anchor":"middle","font-family":"Source Han Sans SC, sans-serif","font-size":10,fill:"#555"});
+		t.textContent="C"+ci; svg.appendChild(t);
+	}
+	for(let gi=0; gi<totalG; gi++){
+		const t=el("text",{x:padL-8,y:padT+gi*ch+ch/2+3,"text-anchor":"end","font-family":"JetBrains Mono, monospace","font-size":9,fill:"#333"});
+		t.textContent="G"+gi; svg.appendChild(t);
+	}
+	const lg=el("linearGradient",{id:"hleg",x1:"0",x2:"1",y1:"0",y2:"0"});
+	lg.appendChild(el("stop",{offset:"0%","stop-color":"#f0f0f0"}));
+	lg.appendChild(el("stop",{offset:"100%","stop-color":"#111"}));
+	svg.appendChild(el("defs")).appendChild(lg);
+	svg.appendChild(el("rect",{x:padL,y:6,width:120,height:8,fill:"url(#hleg)"}));
+	svg.appendChild(el("text",{x:padL,y:H-8,"font-family":"Source Han Sans SC, sans-serif","font-size":10,fill:"#888"})).textContent="低";
+	svg.appendChild(el("text",{x:padL+120,y:H-8,"text-anchor":"end","font-family":"Source Han Sans SC, sans-serif","font-size":10,fill:"#888"})).textContent="行 z-score · 高";
+})();
+
+/* 目录生成 */
+(function(){
+	const list=document.getElementById("toc-list");
+	const heads=document.querySelectorAll("section h2");
+	heads.forEach((h,i)=>{
+		const sec=h.closest("section");
+		if(!sec.id) sec.id="sec-"+i;
+		const li=document.createElement("li");
+		const a=document.createElement("a");
+		a.href="#"+sec.id;
+		a.innerHTML='<span class="idx">'+(i+1)+'</span><span class="txt">'+h.textContent.replace(/^[\s\d]+/,'').trim()+'</span>';
+		li.appendChild(a); list.appendChild(li);
+	});
+})();
+</script>
+</body>
+</html>

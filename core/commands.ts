@@ -1,4 +1,18 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/** Resolve the bundled HTML report template, handling both source and dist layouts. */
+function resolveReportTemplatePath(): string {
+	const candidates = [__dirname, path.resolve(__dirname, ".."), path.resolve(__dirname, "..", "..")];
+	const root = candidates.find((candidate) => fs.existsSync(path.join(candidate, "skills")))
+		?? path.resolve(__dirname, "..");
+	return path.join(root, "skills", "analysis-planning", "references", "report-template.html");
+}
 
 export function registerReflectCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("reflect", {
@@ -44,6 +58,41 @@ export function registerReflectCommand(pi: ExtensionAPI): void {
 			].join("\n");
 
 			pi.sendUserMessage(INTROSPECTION_PROMPT);
+		},
+	});
+}
+
+export function registerGenerateReportCommand(pi: ExtensionAPI): void {
+	pi.registerCommand("generate-report", {
+		description: "结果与讨论确认无误后，综合分析结果与本次会话讨论，生成最终自包含中文 HTML 报告（手动触发）",
+		async handler(args, _ctx) {
+			const templatePath = resolveReportTemplatePath();
+			const extra = (args ?? "").trim();
+			const prompt = [
+				"## 生成最终分析报告 / Generate Final Report",
+				"",
+				"用户在确认分析结果与讨论无误后，手动触发了报告生成。这是最终交付物，仅在用户明确要求时进行。",
+				"",
+				"### 数据来源（全部要综合进报告）",
+				"1. **计划文件** — 定位最新的 `Task/TaskN-*.md`（若有多份取最近修改的；若找不到则询问用户路径）。从中读取 TaskID、分析父目录、模块布局、Todolist 与 Task Details、方法学与参数依据。",
+				"2. **分析产物** — 读取各模块目录下的关键结果：h5ad 摘要、结果表（tables/）、图（plots/）、关键脚本与配置。挑选最能支撑结论的图与表进入报告。",
+				"3. **本次会话的讨论** — 重点回顾对话历史中与用户达成的解读、结论、保留意见、限定条件、人工调整。这些常不在文件里，却对“核心结论”与“图片详解”至关重要。若讨论中有尚未落地的修改或补充，先与用户确认再写入。",
+				"",
+				"### 报告模板",
+				`读取并遵循报告模板：\`${templatePath}\`。保持其结构与样式（黑白学术排版、编号章节、三线表、编号图注、四段式章节），把演示数据替换为真实内容；删除模板里生成占位图的 <script>，把每个 <figure> 内的 SVG 换成真实图片。`,
+				"",
+				"### 硬性要求",
+				"- 文件名：`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html`，TaskID 与计划文件前缀一致，<具体内容> 简短且文件名安全。先创建 `Report/` 目录（若不存在）。",
+				"- 自包含：所有图片以 `data:image/png;base64,...` 内嵌；无任何外部依赖。",
+				"- 全中文。",
+				"- 必含四段：①分析思路与方法选择（含方法/参数取舍依据）②核心结论（数据说话）③图片详解（每图三句：展示什么 / 关键信息 / 生物学含义）④文件与复现索引（模块目录、关键脚本、配置、结果表与图的位置）。",
+				"- 不要创建 README、不要创建 99_Report/、不要把报告作为子任务。",
+				"- 不要自行 git commit。报告写完后告知用户路径与一句话摘要，由用户审阅后再决定是否提交。",
+				...(extra ? ["", "### 用户本次补充指示", extra] : []),
+				"",
+				"现在开始：先定位并读取计划文件与关键产物、回顾会话讨论、读取模板，然后写出报告，最后告知用户报告路径与一句话摘要。",
+			].join("\n");
+			pi.sendUserMessage(prompt);
 		},
 	});
 }

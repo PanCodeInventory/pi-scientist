@@ -1,5 +1,3 @@
-import * as path from "node:path";
-
 export function buildWorkerTask(planFile: string, workDir: string): string {
 	return `Read the plan file at \`${planFile}\` and execute the next unchecked analysis step. Effective analysis parent directory: ${workDir}. The plan file must declare the analysis parent directory, plan file path, and concrete module directory for each step. Follow the methodology and skill specified in that step, and write every generated script/config/result under the declared module directory (e.g. <NN>_ModuleName/, sibling to Task/, not inside Task/). Do NOT create README.md files or 99_Report/. DO NOT modify the plan file — the reviewer agent handles plan updates.`;
 }
@@ -28,30 +26,16 @@ export function buildReviewTask(options: {
 	return `Read the plan file at \`${planFile}\`. Effective analysis parent directory: ${workDir}. ${identifyStep} (it will still be marked \`- [ ]\` because the worker is forbidden from modifying the plan). Review its outputs for code correctness, statistical validity, figure quality (MUST first read skills/visualization/shared/figure-standards.md, then run its 6 BLOCKER checks — any failure is NEEDS FIX), data provenance, and plan compliance. If PASS: ${passAction}. If NEEDS FIX: ${fixAction}. Update the plan file accordingly.`;
 }
 
-export function extractTaskIdFromPlanFile(planFile: string): string {
-	const stem = path.basename(planFile).replace(/\.md$/i, "");
-	const match = stem.match(/^(Task\d+)(?:-\d{8})?$/);
-	return match?.[1] || stem || "TaskN";
-}
-
-export function todayYmd(now = new Date()): string {
-	const yyyy = String(now.getFullYear());
-	const mm = String(now.getMonth() + 1).padStart(2, "0");
-	const dd = String(now.getDate()).padStart(2, "0");
-	return `${yyyy}${mm}${dd}`;
-}
-
-export function reportFilenameHint(planFile: string): string {
-	return `Report/${extractTaskIdFromPlanFile(planFile)}-具体内容-${todayYmd()}.html`;
-}
-
-export function buildCompletionReminder(planFile: string): string {
+export function buildCompletionReminder(): string {
 	return [
-		"## Main-Agent Completion Reminder",
-		"All Todolist items in the plan are now checked. Do NOT call another subagent for report generation.",
+		"## 分析已完成 / Analysis Complete",
+		"All Todolist items in the plan are now checked. Do NOT write the final report, and do NOT dispatch any more subagents.",
+		"",
 		"Next, the main agent must:",
-		"1. Use/read the `frontend-design` skill.",
-		`2. Write the final self-contained Chinese HTML report to \`${reportFilenameHint(planFile)}\` (replace \`具体内容\` with a short filename-safe content summary; no README files, no \`99_Report/\`).`,
-		"3. Run `git status`, stage the relevant analysis/report files, and create a git commit.",
+		"1. Summarize the completed analysis to the user: what was done, the key results, and any caveats or open questions.",
+		"2. Tell the user that when the results are confirmed and finalized after discussion, they can run `/generate-report` to generate the final self-contained Chinese HTML report. That command synthesizes the analysis results together with the session discussion.",
+		"3. Do NOT git commit on your own — wait for the user to decide after reviewing the report.",
+		"",
+		"The final report is generated on-demand by the user via `/generate-report`, never automatically. It is not a subagent step.",
 	].join("\n");
 }

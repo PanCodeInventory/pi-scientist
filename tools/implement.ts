@@ -18,14 +18,14 @@ export function registerImplementTool(pi: ExtensionAPI): void {
 			"The worker executes the step but cannot modify the plan file.",
 			"The reviewer inspects the output, marks checkboxes on PASS, or adds fix steps on NEEDS FIX.",
 			"Each call executes ONE analysis step + its review. Call sci_implement repeatedly to progress through the plan.",
-			"When all plan steps are checked, the tool reminds the main agent to write Report/<TaskID>-<具体内容>-<YYYYMMDD>.html with frontend-design and then git commit.",
+			"When all plan steps are checked, the tool reminds the main agent to summarize completion and tell the user to run /generate-report when ready (report generation is manual, not automatic).",
 		].join(" "),
 		promptSnippet: "Dispatch worker+reviewer to execute and verify next plan step",
 		promptGuidelines: [
 			"Call sci_implement with the planFile path written by the main agent and the analysis parent directory recorded in that plan. The worker reads the file directly — do not copy the plan content into the tool call.",
 			"Each sci_implement call runs worker (execute step) → reviewer (verify + update plan) automatically. Call sci_implement once per analysis step.",
 			"If the reviewer reports NEEDS FIX, fix steps have already been added to the plan file. Call sci_implement again to execute them.",
-			"If sci_implement says all Todolist items are checked, stop dispatching subagents: use/read frontend-design, write Report/<TaskID>-<具体内容>-<YYYYMMDD>.html, then git commit.",
+			"If sci_implement says all Todolist items are checked, stop dispatching subagents: summarize the completed analysis to the user and tell them to run /generate-report when the results are confirmed. Do not write the report or git commit on your own.",
 			"If the worker reports ANALYSIS TERMINATED or fails, investigate the issue before re-dispatching.",
 		],
 		parameters: Type.Object({
@@ -100,7 +100,7 @@ export function registerImplementTool(pi: ExtensionAPI): void {
 
 			const uncheckedTodos = reviewResult.exitCode === 0 ? hasUncheckedTodolistItems(planPath) : null;
 			const completionReminder = uncheckedTodos === false
-				? buildCompletionReminder(params.planFile)
+				? buildCompletionReminder()
 				: "";
 
 			// Combined result

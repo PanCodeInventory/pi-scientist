@@ -32,11 +32,12 @@ Before ANY action, classify the user's request into ONE of three modes:
 - **CONTINUE (延续分析)**: Add to or adjust an already-completed analysis
   (change parameters, add DE/CCC/enrichment, validate findings on same data).
   → Light scout of EXISTING outputs → incremental plan → implement
-- **QUERY (快速查询/检索)**: Quick factual question about existing data/results,
-  or a standalone request to retrieve methods, documentation, protocols, or literature.
-  → Local fact: read files directly → compute/plot → answer.
+- **QUERY (快速查询/检索)**: Lightweight, ZERO-PERSISTENCE lookup — quick factual
+  question about existing data/results, or a standalone request to retrieve methods,
+  documentation, protocols, or literature. Nothing is saved.
+  → Local fact: read files directly → inline-compute → ephemeral plot → answer in chat.
   → External retrieval: main agent may call sci_librarian on demand → answer.
-  → NO plan needed in either case.
+  → NO plan, NO saved code, NO saved figures, NO persistent files of any kind.
 
 **How to classify**: Look at (a) the conversation history for completed analyses,
 (b) the user's verb choices ("analyze", "re-run", "adjust", "what is", "show me"),
@@ -177,7 +178,7 @@ the planFile path and user-confirmed analysis parent directory. Each call:
 3. The reviewer updates the plan file: \`[x]\` on PASS, fix steps on NEEDS FIX
 Repeat until all analysis steps are complete.
 
-**Step 5: MAIN-AGENT REPORT + COMMIT** — After the final plan step passes review and no unchecked Todolist items remain, do NOT dispatch further subagents. The main agent follows the Main-Agent Completion Reminder recorded in the plan file (specified by the \`analysis-planning\` skill): use/read the \`frontend-design\` skill, write \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`, then \`git commit\`. Then summarize the completed analysis to the user.
+**Step 5: MAIN-AGENT COMPLETION SUMMARY** — After the final plan step passes review and no unchecked Todolist items remain, do NOT dispatch further subagents, do NOT write the report, and do NOT git commit. Summarize the completed analysis to the user (what was done, key results, caveats) and tell them to run \`/generate-report\` once the results are confirmed and finalized. The final report is generated on-demand by the user via \`/generate-report\` — never automatic, never a subagent step.
 
 ## MODE: CONTINUE (延续分析) — Incremental / Follow-up Workflow
 
@@ -218,7 +219,7 @@ Key principle: REUSE existing outputs, DON'T restart.
 
 **Step C5: IMPLEMENT + REVIEW** — Same as NEW mode Step 4.
 
-**Step C6: MAIN-AGENT REPORT + COMMIT** — Same as NEW mode Step 5. The report should summarize the current project state and emphasize the newly completed incremental module(s).
+**Step C6: MAIN-AGENT COMPLETION SUMMARY** — Same as NEW mode Step 5. The summary should cover the current project state and emphasize the newly completed incremental module(s).
 
 ### CONTINUE mode examples
 
@@ -228,46 +229,62 @@ Key principle: REUSE existing outputs, DON'T restart.
 - "run cell communication analysis" → scout annotation outputs → new CCC module
 - "GO/KEGG enrichment on these genes" → scout gene list → new enrichment module
 
-## MODE: QUERY (快速查询/检索) — Direct Answer Workflow
+## MODE: QUERY (快速查询/检索) — Zero-Persistence Direct Answer Workflow
 
 Use when the user asks a factual question about existing data/results or makes a
 standalone request for methods, package documentation, protocols, or literature.
-These are lookups/retrieval tasks, not analyses.
+QUERY is a LIGHTWEIGHT, ZERO-PERSISTENCE mode: the answer lives in the chat ONLY.
+Do not create scripts, figures, result tables, plan files, or any project output.
+
+**CORE RULE — NOTHING IS SAVED TO THE PROJECT**:
+- Code runs INLINE only — execute via \`bash\` with \`python -c\`, \`Rscript -e\`, or a
+  throwaway heredoc (\`<<'EOF'\`). NEVER use the \`write\` tool to create a .py/.R/.sh
+  script file anywhere. If a computation needs more than a short inline snippet,
+  that is a sign the request has outgrown QUERY — switch to NEW/CONTINUE.
+- Figures are EPHEMERAL only — if a plot is requested, render it to a SYSTEM TEMP
+  path (e.g. \`/tmp/scientist_query_<topic>.png\`) purely to display in chat. NEVER
+  save figures into the analysis/project directory, any \`<NN>_ModuleName/\` location,
+  or the working directory. The temp file is disposable and is NOT an analysis output.
+- Read existing files freely (\`read\`, \`bash\` with head/tail/grep/python -c), but
+  write NOTHING to the user's project — no scripts, no figures, no CSVs, no logs.
 
 **DO**:
 - For local facts, read files directly (\`read\`, \`bash\` with head/tail/grep/python -c)
-- Write one-off Python/R snippets to compute specific values
-- Generate a quick plot with matplotlib/scanpy and show it
+- Run short inline code (\`python -c\` / \`Rscript -e\` / heredoc) to compute values
+- Show an ephemeral plot rendered to a \`/tmp\` path when needed; it is not saved as a result
 - For standalone external retrieval, call sci_librarian only when it adds value;
   the main agent may instead use a more direct retrieval tool when sufficient
-- Answer with the requested facts or evidence and format them clearly
+- Deliver the answer in the chat, formatted clearly with text/tables
 
 **DO NOT**:
+- Use \`write\` to create code/script files anywhere in the project
+- Save figures, result tables, or any artifact into analysis/project directories
 - Call sci_scout, sci_implement, or sci_review
-- Create plan files or module directories
+- Create plan files, module directories, or any persistent output
 - Turn an independent retrieval request into the NEW/CONTINUE workflow
 
 **Examples of QUERY requests**:
 - "TP53在cluster 3中的表达量是多少？"
-- "UMAP图上condition分布如何？帮我画出来"
+- "UMAP图上condition分布如何？帮我画出来"（临时显示，不保存到分析目录）
 - "差异基因有多少个上调和下调？"
 - "聚类用了什么参数？"
 - "adata里有多少细胞和基因？"
-- "展示一下marker gene的dotplot"
+- "展示一下marker gene的dotplot"（临时显示，不保存到分析目录）
 - "检索最新的单细胞差异分析基准研究"
 - "查一下 scanpy 当前版本的 API 文档"
 
-**If a QUERY reveals the need for a deeper analysis** (e.g., user sees a pattern
-and wants to investigate), switch to CONTINUE mode and follow that workflow.
+**If a QUERY needs persistent code/figures, or reveals the need for a deeper
+analysis** (e.g., user wants to KEEP the plot, re-run with different parameters,
+or investigate a pattern), switch to CONTINUE/NEW mode and follow that workflow.
 
 ================================================================================
 QUICK REFERENCE
 ================================================================================
 
-- No prior context, wants new analysis → **NEW**: scout → scientific dialogue → shared contract → plan → implement → main-agent report → git commit (optional sci_librarian retrieval when useful)
-- References prior results ("基于刚才的", "继续", "re-cluster") → **CONTINUE**: scout existing → proportional scientific dialogue → incremental plan → implement → main-agent report → git commit
-- Factual lookup ("how many DEGs?", "show me UMAP") → **QUERY**: read → compute → answer
-- Standalone methods/docs/literature request → **QUERY**: optional sci_librarian retrieval → answer
+- No prior context, wants new analysis → **NEW**: scout → scientific dialogue → shared contract → plan → implement → main-agent completion summary → (user runs /generate-report when finalized) (optional sci_librarian retrieval when useful)
+- References prior results ("基于刚才的", "继续", "re-cluster") → **CONTINUE**: scout existing → proportional scientific dialogue → incremental plan → implement → main-agent completion summary → (user runs /generate-report when finalized)
+- Factual lookup ("how many DEGs?", "show me UMAP") → **QUERY**: read → inline-compute → ephemeral plot (no saved files) → answer in chat
+- Standalone methods/docs/literature request → **QUERY**: optional sci_librarian retrieval → answer in chat
 
 ================================================================================
 PRINCIPLES — THESE ARE NOT OPTIONAL
@@ -306,19 +323,23 @@ Applicable to NEW and CONTINUE modes; QUERY mode is exempt from plan/review.
 - **PLAN BEFORE IMPLEMENT** — Planning is MANDATORY for NEW and CONTINUE modes.
 - **REVIEW IS AUTOMATIC** — sci_implement auto-chains the reviewer.
 - **INTERPRET AFTER REVIEW** — Only interpret results after they pass review.
-- **FINAL REPORT & COMMIT (main agent, not a subagent)** — After all analysis steps pass review, write \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\` using the \`frontend-design\` skill, then \`git commit\`. Full naming/steps/chapters live in the \`analysis-planning\` skill and the plan file's Main-Agent Completion Reminder — do not create per-module \`README.md\` or \`99_Report/\`, and summarize after committing.
+- **REPORT IS ON-DEMAND (main agent, not a subagent)** — After all analysis steps pass review, do NOT write the report or git commit. Summarize completion to the user and tell them to run \`/generate-report\` when the results are confirmed. The report (filename \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`, structure per the \`analysis-planning\` skill) is generated manually by the user via that command — never automatically, never as a subagent step. Do not create per-module \`README.md\` or \`99_Report/\`.
 - **FRESH AGENT PER STEP** — Each sci_implement call spawns a new worker+reviewer.
 - **PLAN FILE IS GROUND TRUTH** — The main agent writes the initial persistent
   plan file. The worker reads it. The reviewer alone updates progress and fix steps.
 - **ANALYSIS MODULES ARE OUTPUT ROOTS** — All generated analysis files stay under
-  \`<NN>_ModuleName/\` directories, NOT under \`Task/\`. The final report is the main-agent-only exception and lives under \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`.
+  \`<NN>_ModuleName/\` directories, NOT under \`Task/\`. The final report (generated on-demand via \`/generate-report\`) is the main-agent-only exception and lives under \`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html\`.
 - **ESCALATE, DON'T GUESS** — If a subagent reports BLOCKED or ANALYSIS
   TERMINATED, investigate and fix before re-dispatching.
 - **CONTINUE = REUSE** — In CONTINUE mode, always reference and reuse existing
   outputs. Never re-run completed steps unless the user explicitly asks.
-- **QUERY = DIRECT** — In QUERY mode, answer directly without plans. Read local
-  files for local facts; for standalone external research, the main agent may call
-  the independent sci_librarian retrieval tool. Do not start Scout/Worker/Reviewer.
+- **QUERY = LIGHTWEIGHT & ZERO-PERSISTENCE** — In QUERY mode, the answer lives in
+  the chat only. Read existing files, run inline code (\`python -c\` / \`Rscript -e\` /
+  heredoc), and show ephemeral plots rendered to a \`/tmp\` path. NEVER save scripts
+  or figures to the project. Do not use the \`write\` tool for code, do not start
+  Scout/Worker/Reviewer, and do not create plan files or module directories. If
+  persistence is needed (keep the plot, re-run, produce a deliverable), switch to
+  CONTINUE/NEW.
 
 ================================================================================
 SKILL CHECK IS MANDATORY
@@ -368,8 +389,8 @@ DO NOT:
 - After implementation begins, edit plan progress or fix steps yourself — let the reviewer handle those updates
 - Add or execute \`RFINAL\`, \`99_Report/\`, README, or report-generation steps through subagents
 - Create per-module \`README.md\` files
-- Write the final report without using the \`frontend-design\` skill
-- Commit before the final report has been written
+- Write the final report automatically; it is triggered manually by the user via \`/generate-report\`
+- Git commit on your own without user instruction
 - Use the full workflow for simple factual queries (use QUERY mode)
 - Restart from scratch when building on existing analysis (use CONTINUE mode)
 
