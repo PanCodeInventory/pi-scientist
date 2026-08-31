@@ -1,46 +1,52 @@
 ---
 name: scanpy-cluster
-description: 'Downstream single-cell analysis: dimensionality reduction, clustering, marker gene identification, and cell type annotation. Use this AFTER scanpy-prep when the data is QCed and normalized. Triggered by: UMAP, t-SNE, PCA, Leiden, Louvain, clustering, cell clusters, 聚类, 降维, marker genes, 标记基因, cell type annotation, 细胞注释, 细胞类型鉴定, cell identity, 这是什么细胞, find markers, rank genes, cluster annotation, dotplot, heatmap, neighborhood graph, cell phenotyping, 分群, 分群注释. For differential expression between conditions, use scanpy-de instead.'
+description: 'Clustering and cell type annotation of single-cell data: neighbor graph, UMAP/t-SNE, marker genes. For differential expression use scanpy-de.'
 ---
 
 # Scanpy-Cluster: Dimensionality Reduction, Clustering & Annotation
 
 ## Overview
 
-The downstream phase of single-cell analysis. Takes a QCed and normalized AnnData (from scanpy-prep) and runs dimensionality reduction, clustering, marker gene identification, and cell type annotation. This skill covers both basic annotation and the advanced cluster-identify pipeline.
+The downstream graph-analysis phase. It takes a full-gene AnnData with HVG-derived `X_pca` from scanpy-prep, then constructs neighbors, embeddings, clusters, markers, and annotations. PCA/HVG preprocessing is not repeated here.
 
 ## Prerequisite
 
-Run **scanpy-prep** first. The input AnnData must already have:
+Run **scanpy-prep** first. The input AnnData should follow the full-gene contract:
 - QC filters applied
-- Normalized (`sc.pp.normalize_total` + `sc.pp.log1p`)
-- Raw counts saved (`adata.raw = adata`)
-- HVG selected and data scaled
+- `adata.X`: full-gene normalized (`normalize_total` + `log1p`) expression
+- `adata.layers["counts"]`: full-gene integer-valued counts
+- `adata.var["highly_variable"]`: HVG mask without physical gene subsetting
+- `adata.obsm["X_pca"]`: PCA produced by scanpy-prep
 
-## Dimensionality Reduction
+Fail early rather than silently recomputing PCA:
 
 ```python
-# PCA
-sc.tl.pca(adata, svd_solver='arpack')
-sc.pl.pca_variance_ratio(adata, log=True)  # Check elbow plot to pick n_pcs
+if "X_pca" not in adata.obsm:
+    raise ValueError(
+        "X_pca is missing. Run scanpy-prep or explicitly rerun its PCA stage."
+    )
+```
 
-# Compute neighborhood graph
-sc.pp.neighbors(adata, n_neighbors=10, n_pcs=40)
+## Graph Construction and Embedding
+
+```python
+# Build the graph explicitly from the upstream PCA representation
+sc.pp.neighbors(adata, n_neighbors=10, n_pcs=40, use_rep="X_pca")
 
 # UMAP for visualization
 sc.tl.umap(adata)
 sc.pl.umap(adata, color='leiden')
 
-# Alternative: t-SNE
-sc.tl.tsne(adata)
+# Alternative visualization from the same upstream PCA
+sc.tl.tsne(adata, use_rep="X_pca", random_state=0)
 ```
 
-**Key decision**: How many PCs? Let the elbow plot guide you. Default for 10X data: 30-50 PCs. For atlas-scale: 50-100 PCs.
+**Key decision**: choose how many existing PCs enter the neighbor graph. Inspect the PCA diagnostics produced upstream; do not recompute PCA merely to change `n_pcs`.
 
 ## Clustering
 
 ```python
-# Leiden clustering (recommended over Louvain)
+# Leiden clustering
 sc.tl.leiden(adata, resolution=0.5)
 sc.pl.umap(adata, color='leiden', legend_loc='on data')
 
@@ -49,13 +55,15 @@ for res in [0.3, 0.5, 0.8, 1.0]:
     sc.tl.leiden(adata, resolution=res, key_added=f'leiden_{res}')
 ```
 
-**Resolution guide**: 0.3-0.5 for broad populations, 0.8-1.2 for fine subpopulations, start at 0.5 and adjust.
+**Resolution guide**: compare multiple values and validate stability and marker coherence; there is no universal mapping from resolution to a fixed number of cell types. See `references/resolution_selection.md`.
 
 ## Marker Gene Identification
 
 ```python
 # Find marker genes for each cluster
-sc.tl.rank_genes_groups(adata, 'leiden', method='wilcoxon')
+sc.tl.rank_genes_groups(
+    adata, 'leiden', method='wilcoxon', use_raw=False
+)  # full-gene log-normalized X
 
 # Visualize results
 sc.pl.rank_genes_groups(adata, n_genes=25, sharey=False)
@@ -68,17 +76,17 @@ markers = sc.get.rank_genes_groups_df(adata, group='0')
 
 ## Cell Type Annotation
 
-### Quick Manual Annotation
+Annotation is complete only when every cluster is mapped to a cell type backed by at least one marker gene.
 
-For routine analyses with well-known cell types:
+### Quick Manual Annotation
 
 ```python
 # Define marker genes for known cell types
 marker_genes = ['CD3D', 'CD14', 'MS4A1', 'NKG7', 'FCGR3A']
 
 # Visualize markers
-sc.pl.umap(adata, color=marker_genes, use_raw=True)
-sc.pl.dotplot(adata, var_names=marker_genes, groupby='leiden')
+sc.pl.umap(adata, color=marker_genes, use_raw=False)
+sc.pl.dotplot(adata, var_names=marker_genes, groupby='leiden', use_raw=False)
 
 # Manual annotation
 cluster_to_celltype = {
@@ -91,6 +99,8 @@ adata.obs['cell_type'] = adata.obs['leiden'].map(cluster_to_celltype)
 sc.pl.umap(adata, color='cell_type', legend_loc='on data')
 ```
 
+For a curated marker gene database (PanglaoDB/HPCA/CellMarker), read `references/marker_database.py`.
+
 ### Advanced Annotation
 
 For systematic, evidence-driven annotation with independent validation, GO/KEGG enrichment, pathway scoring, and TF analysis, use **scanpy-annotate** — a dedicated skill that wraps the cluster-identify pipeline. Trigger it with questions like "这些是什么细胞？", "annotate clusters", "cell type identification".
@@ -98,8 +108,6 @@ For systematic, evidence-driven annotation with independent validation, GO/KEGG 
 ## Publication-Quality Plots
 
 ```python
-sc.settings.set_figure_params(dpi=300, frameon=False, figsize=(5, 5))
-
 # UMAP with legend
 sc.pl.umap(adata, color='cell_type', palette='Set2',
            legend_loc='on data', legend_fontsize=12,
@@ -119,18 +127,18 @@ For comprehensive plotting guidance, read `references/plotting_guide.md`.
 
 | Parameter | Guide | When to Adjust |
 |-----------|-------|----------------|
-| `n_pcs` | Elbow plot | 30-50 for 10X; 50-100 for atlas |
+| `n_pcs` | Upstream PCA diagnostics | Number of existing PCs used for neighbors |
 | `n_neighbors` | 10-30 | Lower for small datasets, higher for large |
 | `resolution` | 0.3-1.2 | Start at 0.5; higher = more clusters |
 
-For detailed parameter selection: `references/parameter_selection.md`.
+For PCA/neighbor heuristics, consult `scanpy-prep/references/parameter_selection.md`; for clustering resolution, read `references/resolution_selection.md`.
 
 ## Common Pitfalls
 
-1. **Not using `use_raw=True`**: Plotting normalized expression instead of raw counts — always use `use_raw=True` for marker gene visualization
-2. **Blind resolution**: Using default 1.0 without trying alternatives — test 3-4 values and visually compare
-3. **Leiden vs Louvain**: Louvain can produce disconnected communities — use Leiden instead
-4. **Over-clustering**: Too many small clusters become uninterpretable — validate each cluster has >50 cells and consistent markers
+1. **Confusing `.raw` with counts**: Marker visualization and Wilcoxon testing use full-gene log-normalized `X`; count models use `layers["counts"]`.
+2. **Testing only HVGs**: Verify `adata.n_vars > adata.var["highly_variable"].sum()` before marker analysis.
+3. **Leiden vs Louvain**: Louvain can produce disconnected communities — use Leiden instead.
+4. **Over-clustering**: Validate small clusters with coherent markers and QC metrics rather than a universal size cutoff.
 
 For annotation pitfalls, see scanpy-annotate.
 
@@ -138,7 +146,7 @@ For annotation pitfalls, see scanpy-annotate.
 
 After clustering and basic marker identification:
 - **scanpy-annotate** — systematic cell type annotation with cluster-identify pipeline
-- **scanpy-de** — if you need differential expression between conditions
+- **scanpy-de** — differential expression between conditions
 - **CellChat Analysis** / **liana-analysis** — cell-cell communication analysis
 - **pySCENIC** — transcription factor regulon analysis
 - **gene-prognosis-scan** — clinical relevance of marker genes

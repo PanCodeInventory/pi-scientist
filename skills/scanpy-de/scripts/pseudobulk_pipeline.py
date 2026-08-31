@@ -21,7 +21,7 @@ def create_pseudobulk(
     adata,
     sample_col: str,
     groupby: str,
-    layer: str = None,
+    layer: str = "counts",
     min_cells: int = 10,
     min_counts: int = 10,
 ):
@@ -37,7 +37,7 @@ def create_pseudobulk(
     groupby : str
         Column for grouping (cell type)
     layer : str
-        Layer containing raw counts
+        Layer containing full-gene integer-valued counts
     min_cells : int
         Minimum cells per pseudobulk sample
     min_counts : int
@@ -51,16 +51,28 @@ def create_pseudobulk(
         Sample metadata
     """
     
-    # Get counts matrix
-    if layer is not None:
-        X = adata.layers[layer]
-    elif adata.raw is not None:
-        X = adata.raw.X
-    else:
-        X = adata.X
-    
-    if sparse.issparse(X):
-        X = X.toarray()
+    # Count-based DE must use an explicit count layer. adata.raw commonly
+    # contains log-normalized values and is never a safe fallback.
+    if layer is None or layer not in adata.layers:
+        raise ValueError(
+            f"Full-gene count layer '{layer}' not found. "
+            f"Available layers: {list(adata.layers.keys())}"
+        )
+    if adata.raw is not None and adata.raw.n_vars > adata.n_vars:
+        raise ValueError(
+            "Legacy HVG-only AnnData detected: adata.raw has more genes than X, "
+            "but the count layer is restricted to HVGs. Rebuild from the "
+            "original full-gene counts before pseudobulk DE."
+        )
+    X = adata.layers[layer]
+    if X.shape != adata.shape:
+        raise ValueError(
+            f"Layer '{layer}' has shape {X.shape}, expected {adata.shape}"
+        )
+
+    values = X.data if sparse.issparse(X) else np.asarray(X)
+    if not np.allclose(values, np.round(values), atol=1e-6):
+        raise ValueError(f"Layer '{layer}' is not integer-valued count data")
     
     # Create sample identifiers
     sample_ids = [
@@ -201,7 +213,10 @@ def main():
     parser.add_argument("--condition", default="condition", help="Condition column")
     parser.add_argument("--output", default="pseudobulk", help="Output directory")
     parser.add_argument("--min-cells", type=int, default=10, help="Min cells per sample")
-    parser.add_argument("--layer", default=None, help="Count layer")
+    parser.add_argument(
+        "--layer", default="counts",
+        help="Full-gene integer-valued count layer (default: counts)"
+    )
     parser.add_argument("--design", default="~ condition", help="DESeq2 design formula")
     
     args = parser.parse_args()

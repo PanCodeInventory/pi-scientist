@@ -26,24 +26,9 @@ GTF 文件通常包含多种基因类型。过滤保留关键基因类型可以�
 - 减少基因重叠导致的比对歧义
 - 提高蛋白编码基因的 UMI 计数
 
-> ⚠️ **关键：`--type` 参数必须匹配 GTF 来源，否则过滤出空 GTF（0 基因）！**
->
-> | GTF 来源 | 属性名 | `--type` 取值 |
-> |----------|--------|--------------|
-> | **GENCODE**（推荐，人/鼠） | `gene_type` | `gene_type` |
-> | **Ensembl** | `gene_biotype` | `gene_biotype` |
->
-> **判断方法**（哪个 >0 就用哪个）：
-> ```bash
-> grep -c 'gene_type "'    genes.gtf   # GENCODE 风格
-> grep -c 'gene_biotype "' genes.gtf   # Ensembl 风格
-> ```
-> 用错会导致 mkref 报 `No exon features found`。
-
 ### 1.1 查看基因类型统计
 
 ```bash
-# GENCODE GTF 用 gene_type；Ensembl GTF 改为 gene_biotype
 dnbc4tools tools mkgtf \
   --action stat \
   --ingtf genes.gtf \
@@ -65,7 +50,6 @@ miRNA               1879
 
 ```bash
 # 使用默认过滤规则（推荐）
-# GENCODE GTF 用 gene_type；Ensembl GTF 改为 gene_biotype
 dnbc4tools tools mkgtf \
   --ingtf genes.gtf \
   --output genes.filter.gtf \
@@ -82,7 +66,7 @@ dnbc4tools tools mkgtf \
 ### 1.3 自定义过滤
 
 ```bash
-# 仅保留蛋白编码基因（GENCODE 用 gene_type）
+# 仅保留蛋白编码基因
 dnbc4tools tools mkgtf \
   --ingtf genes.gtf \
   --output genes.filter.gtf \
@@ -204,11 +188,10 @@ dnbc4tools rna mkref \
 
 ## 输出目录结构
 
-> ⚠️ v3.0 实际输出为 **嵌套结构**：在 `--genomeDir` 下先建一层 `<species>/` 子目录，所有文件都在其中；且 `ref.json` **只写在 `<species>/` 下**。但 `rna run` 读取时需要 **顶层 `genomeDir/ref.json`**。
+> v3.0 实际输出为 **嵌套结构**：在 `--genomeDir` 下先建一层 `<species>/` 子目录，所有文件都在其中。
 
 ```
 genomeDir/
-├── ref.json                # ⚠️ 需从下方 <species>/ 手动拷贝到此处！
 └── <species>/              # 如 Homo_sapiens / Mus_musculus
     ├── ref.json            # mkref 实际写入位置
     ├── cmd.txt             # 构建命令记录
@@ -225,13 +208,6 @@ genomeDir/
         ├── chrName.txt
         ├── mtgene.list     # 线粒体基因列表
         └── ...
-```
-
-**mkref 后必须补一步**（否则 `rna run` 报 `FileNotFoundError: .../STAR`）：
-
-```bash
-cp <genomeDir>/<species>/ref.json <genomeDir>/ref.json
-# 例：cp /database/GRCh38/Homo_sapiens/ref.json /database/GRCh38/ref.json
 ```
 
 ### ref.json 内容示例

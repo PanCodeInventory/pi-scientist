@@ -1,27 +1,21 @@
 ---
 name: spatial-commot
-description: "Spatial transcriptomics cell-cell communication inference via COMMOT (Collective Optimal Transport). Infers signaling between spatially-resolved cells/spots using optimal transport theory with spatial distance constraints. Use this skill whenever a user wants to run COMMOT analysis, perform spatially-aware cell communication inference, analyze ligand-receptor interactions with spatial constraints, compute signaling direction vector fields, or identify communication-dependent genes in spatial transcriptomics data. Triggered by: COMMOT, commot, spatial cell communication, spatial CCC, optimal transport signaling, spatial ligand-receptor, 空间通讯, 空间细胞通讯, 空间配体受体, collective optimal transport, spatial signaling direction, communication-dependent genes, spatial CCC inference, 空间转录组通讯分析. Use instead of scanpy-cellcommunication when the data has spatial coordinates and spatial constraints matter."
+description: "COMMOT — spatial cell-cell communication via collective optimal transport. Use when the user wants spatial CCC, signaling direction vector fields, or communication-dependent genes. Use instead of scanpy-cellcommunication when spatial coordinates matter."
 ---
 
 # Spatial-COMMOT: Spatial Cell-Cell Communication via Collective Optimal Transport
 
-Infer cell-cell communication (CCC) in spatial transcriptomics data using COMMOT — a method that models signaling as a collective optimal transport problem with spatial distance constraints. Unlike CellChat or CellPhoneDB which ignore spatial information, COMMOT explicitly restricts signaling to nearby cells and handles multi-species ligand-receptor competition through optimal transport theory.
+Infer cell-cell communication (CCC) in spatial transcriptomics data using COMMOT — a method that models signaling as a collective optimal transport problem under a **spatial constraint**. Unlike CellChat or CellPhoneDB, which ignore spatial information, COMMOT restricts signaling to nearby cells and handles multi-species ligand-receptor competition through optimal transport theory.
 
 **Citation:** Cang Z, Zhao Y, Almet AA, et al. "Screening cell–cell communication in spatial transcriptomics via collective optimal transport." *Nature Methods* 20, 218–228 (2023). DOI: [10.1038/s41592-022-01728-4](https://doi.org/10.1038/s41592-022-01728-4)
 
 **Package:** `commot` v0.0.3 | PyPI: `pip install commot` | [GitHub](https://github.com/zcang/COMMOT) | [Docs](https://commot.readthedocs.io/)
 
+**Related methods:** CellChatDB — Jin et al., *Nat Commun* 2021, DOI [10.1038/s41467-021-21246-9](https://doi.org/10.1038/s41467-021-21246-9) · CellPhoneDB v4.0 — Efremova et al., *Nat Protoc* 2020, DOI [10.1038/s41596-020-0292-x](https://doi.org/10.1038/s41596-020-0292-x) · Optimal Transport — Peyré & Cuturi, *Foundations and Trends* 2019, DOI [10.1561/2200000073](https://doi.org/10.1561/2200000073)
+
 ## When to Use COMMOT vs Other CCC Methods
 
-| Method | Spatial Awareness | Best For |
-|--------|------------------|----------|
-| **COMMOT** | ✅ Native — distance-constrained OT | Spatial TX data (Visium, MERFISH, etc.) where spatial proximity drives signaling |
-| CellChat | ❌ Non-spatial | Non-spatial scRNA-seq, pathway-level analysis |
-| CellPhoneDB | ❌ Non-spatial | Non-spatial scRNA-seq, statistical testing |
-| Squidpy ligrec | ✅ Spatial neighbors | Quick spatial CCC, broad L-R database (OmniPath) |
-| LIANA+ | ⚠️ Can wrap spatial methods | Multi-method consensus, many L-R databases |
-
-**Choose COMMOT when:** you have spatial coordinates, need signaling direction vector fields, or want to model ligand-receptor competition spatially. Use scanpy-cellcommunication for non-spatial scRNA-seq data.
+COMMOT is the right tool when the data has a **spatial constraint** (coordinates exist and proximity drives signaling), when you need signaling direction vector fields, or when ligand-receptor competition matters. For the full comparison matrix (COMMOT vs CellChat vs CellPhoneDB vs Squidpy ligrec vs LIANA+) and when to choose each, read `references/methods_comparison.md`.
 
 ---
 
@@ -42,9 +36,11 @@ assert 'spatial' in adata.obsm, "COMMOT requires adata.obsm['spatial']"
 
 If spatial coordinates are missing, COMMOT cannot be used — suggest scanpy-cellcommunication instead.
 
+**Done when:** `adata.obsm['spatial']` exists, expression is log1p-normalized, and the data has ≥500 spatial locations after QC (or you have redirected the user to scanpy-cellcommunication).
+
 ## Step 1: Clarify Analysis Goals with the User
 
-Always discuss with the user before running analysis. Adapt question language to the user's language (Chinese or English).
+Always discuss with the user before running analysis.
 
 **Q1 — Analysis scope:**
 > "What spatial communication analysis do you want to perform?"
@@ -55,12 +51,7 @@ Always discuss with the user before running analysis. Adapt question language to
 > - E) **Communication impact**: Identify genes whose expression depends on signaling strength
 
 **Q2 — Platform and distance:**
-> "What spatial platform is this data from?" (Determines the distance threshold `dis_thr`)
-> - 10x Visium (~55µm spots) → `dis_thr=200-300`
-> - MERFISH/seqFISH (single-cell) → `dis_thr=30-75`
-> - Slide-seq (10µm beads) → `dis_thr=30-100`
-> - Xenium (subcellular) → `dis_thr=30-60`
-> - Unknown → inspect coordinates: `np.ptp(adata.obsm['spatial'], axis=0)` to gauge scale
+> "What spatial platform is this data from?" (Determines the distance threshold `dis_thr` — read the platform table in `references/parameter_guide.md` for the mapping.)
 
 **Q3 — L-R database:**
 > "Which ligand-receptor database?"
@@ -77,7 +68,7 @@ Base recommendations on answers:
 - Scope E → Run spatial_communication first, then communication_impact
 - Small dataset (<2,000 cells) → reduce `cot_nitermax=5000` for speed
 
-Do NOT proceed until the user has answered Q1 and Q2 at minimum.
+**Done when:** the user has answered Q1 and Q2 at minimum, and you have written down the chosen scope, platform, `dis_thr`, database, and species.
 
 ## Step 2: Preprocessing
 
@@ -131,9 +122,9 @@ df_ligrec = ct.pp.filter_lr_database(
 )
 ```
 
-## Step 3: Infer Spatial Communication
+**Done when:** `df_ligrec` is non-empty after filtering (at least one LR pair passes `min_cell_pct ≥ 0.05`). If it is empty, read `references/troubleshooting.md` ("No L-R pairs pass filtering") before proceeding.
 
-This is the core COMMOT analysis — solves the collective optimal transport problem.
+## Step 3: Infer Spatial Communication
 
 ### Basic Inference
 
@@ -142,46 +133,14 @@ ct.tl.spatial_communication(
     adata,
     database_name='cellchat',     # identifier for storage keys
     df_ligrec=df_ligrec,
-    dis_thr=250,                  # distance threshold (adjust to platform!)
+    dis_thr=250,                  # set from the platform table in references/parameter_guide.md
     heteromeric=True,             # enable complex handling (e.g., TGFBR1_TGFBR2)
     heteromeric_rule='min',       # 'min' = all subunits must be expressed (conservative)
     pathway_sum=True,             # sum signaling per pathway (enables pathway-level analysis)
 )
 ```
 
-### Tuning the OT Parameters
-
-The key parameters control the optimal transport optimization. Understand what they do before changing:
-
-| Parameter | Default | Effect of Increasing | When to Adjust |
-|-----------|---------|---------------------|----------------|
-| `dis_thr` | None | Allows longer-range signaling | Scale to platform resolution (most important parameter) |
-| `cot_eps_p` | 0.1 | More diffuse transport (cells signal to more neighbors) | Lower (0.05) for sharper signaling; higher (0.2) if too sparse |
-| `cot_rho` | 10.0 | Forces more mass to be transported (stronger signaling) | Lower (5) if too much noise; higher (20) if too few hits |
-| `cot_nitermax` | 10000 | More iterations for convergence | Reduce (5000) for speed on large datasets |
-| `cot_weights` | (0.25,0.25,0.25,0.25) | Weight the four COT levels | Default is balanced; use (1,0,0,0) for global-only |
-| `smooth` | False | Spatially smooth expression before OT | Enable for noisy data; requires `smth_eta` |
-| `cost_type` | 'euc' | 'euc_square' penalizes long distance more | 'euc_square' for shorter-range emphasis |
-
-### Platform-Specific Starting Parameters
-
-```python
-# Visium (55µm spots)
-ct.tl.spatial_communication(adata, database_name='cellchat', df_ligrec=df_ligrec,
-    dis_thr=250, heteromeric=True, pathway_sum=True)
-
-# MERFISH / seqFISH+ (single-cell)
-ct.tl.spatial_communication(adata, database_name='cellchat', df_ligrec=df_ligrec,
-    dis_thr=50, heteromeric=True, pathway_sum=True, cot_eps_p=0.05)
-
-# Slide-seq (10µm beads)
-ct.tl.spatial_communication(adata, database_name='cellchat', df_ligrec=df_ligrec,
-    dis_thr=80, heteromeric=True, pathway_sum=True)
-
-# Large dataset (>10,000 cells) — reduce iterations for speed
-ct.tl.spatial_communication(adata, database_name='cellchat', df_ligrec=df_ligrec,
-    dis_thr=250, heteromeric=True, pathway_sum=True, cot_nitermax=5000)
-```
+Set `dis_thr` from the platform table in `references/parameter_guide.md` (the single source of truth for platform→`dis_thr`). For tuning the OT solver parameters (`cot_eps_p`, `cot_rho`, `cot_nitermax`, `cot_weights`, `smooth`, `cost_type`), read `references/parameter_guide.md`.
 
 ### What Gets Stored
 
@@ -203,6 +162,8 @@ After `spatial_communication`, the AnnData is enriched with:
 - Higher sender sum → cell is a strong signaling source
 - Higher receiver sum → cell is a strong signaling target
 - For `heteromeric_rule='min'`, both subunits must be expressed → conservative estimates
+
+**Done when:** `dis_thr` is set (not None), and `adata.obsp['commot-{db}-total-total']` and `adata.obsm['commot-{db}-sum-sender']` exist with at least one LR pair having non-zero signaling.
 
 ## Step 4: Cluster-Level Communication
 
@@ -234,6 +195,8 @@ ct.tl.cluster_communication_spatial_permutation(
 ```
 
 **Interpretation**: Cluster-level p-values test whether the observed communication between two cell types is stronger than expected by random label shuffling. Spatial permutation is more rigorous because it preserves spatial structure.
+
+**Done when:** cluster-level results are stored in `adata.uns` with `n_permutations ≥ 500` (label permutation; ≥1000 for publication) and the `dis_thr` used matches Step 3.
 
 ## Step 5: Signaling Direction Analysis
 
@@ -292,6 +255,8 @@ ct.pl.plot_cell_communication(
 - Long vectors in coherent directions indicate organized tissue-level signaling
 - Chaotic/short vectors suggest local, disorganized signaling
 
+**Done when:** direction vectors exist in `adata.obsm['commot-{db}-direction-sender']` and `adata.obsm['commot-{db}-direction-receiver']`, and at least one plot file has been written.
+
 ## Step 6: Cluster Communication Visualization
 
 ```python
@@ -311,6 +276,8 @@ ct.pl.plot_cluster_communication_dotplot(
     filename='cluster_dotplot.pdf',
 )
 ```
+
+**Done when:** both `cluster_network.pdf` and `cluster_dotplot.pdf` exist on disk.
 
 ## Step 7: Downstream Analysis (Optional)
 
@@ -389,9 +356,9 @@ ct.tl.group_cluster_communication(
 )
 ```
 
-## Step 8: Custom Visualization with scanpy/squidpy
+**Done when:** each chosen downstream analysis has produced its output (e.g., `df_impact` non-empty, `df_deg`/`df_yhat` returned, or the autocorrelation p-value computed).
 
-COMMOT's built-in plots work well, but for publication figures, you may want custom visualizations:
+## Step 8: Custom Visualization and Report
 
 ```python
 # Plot sender signaling on tissue
@@ -408,124 +375,24 @@ sc.pl.spatial(adata, color='TGFB1_receiver', cmap='Blues', title='TGFB1 Signalin
 # Extract cluster-level communication and create a heatmap
 ```
 
-For detailed visualization patterns, read: `references/visualization-guide.md`
+**Done when:** the report states the database, `dis_thr`, OT parameters, and number of significant pairs; intermediate AnnData has been saved at each major step; and all key figures exist in both PNG and PDF.
 
-## Common Pitfalls and Troubleshooting
+## Troubleshooting
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| No L-R pairs pass filtering | Gene names don't match database | Check `adata.var_names` vs database gene symbols; try `filter_lr_database` with lower `min_cell_pct=0.01` |
-| `dis_thr` too large/small | Not scaled to platform | Inspect coordinate range: `np.ptp(adata.obsm['spatial'], axis=0)`. Visium: 200-300, single-cell: 30-75 |
-| Too few significant interactions | `cot_rho` too low | Increase `cot_rho` to 15-20 to force more signaling |
-| Computation too slow | Large dataset + many LR pairs | Reduce `cot_nitermax=5000`, filter LR pairs, subset to HVGs |
-| Memory error | O(n²) distance matrix | Pre-compute sparse distance, or subset regions |
-| Sparse signaling in plots | `cot_eps_p` too low | Increase `cot_eps_p=0.2` for more diffuse transport |
-| Direction vectors chaotic | k too small in `communication_direction` | Increase `k=10` for smoother directions |
-| DEG analysis fails | R/tradeSeq not installed | Install: `pip install commot[tradeSeq]` with R 3.6.3 + tradeSeq 1.0.1 |
-| Heteromeric pairs excluded | Missing subunit | Check that all subunit genes are in `adata.var_names` |
+If a run fails — `filter_lr_database` returns empty, `dis_thr` is mis-scaled, computation is too slow, memory errors, or plots come out empty — read `references/troubleshooting.md` for the diagnosis and fix.
 
-## Parameter Quick Reference
+## Parameter Reference
 
-### `ct.tl.spatial_communication` Key Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `adata` | AnnData | — | Must have `.obsm['spatial']` |
-| `database_name` | str | None | Storage key prefix |
-| `df_ligrec` | DataFrame | None | 3-column: ligand, receptor, pathway |
-| `pathway_sum` | bool | False | Sum signaling per pathway |
-| `heteromeric` | bool | False | Enable complex subunit handling |
-| `heteromeric_rule` | str | 'min' | 'min' (conservative) or 'ave' |
-| `heteromeric_delimiter` | str | '_' | Separator for complex names |
-| `dis_thr` | float/dict | None | Spatial distance threshold (scalar or per-LR-pair dict) |
-| `cost_type` | str | 'euc' | 'euc' or 'euc_square' |
-| `cost_scale` | dict | None | Per-LR-pair cost weights |
-| `cot_eps_p` | float | 0.1 | Entropy regularization |
-| `cot_rho` | float | 10.0 | Unbalanced mass penalty |
-| `cot_nitermax` | int | 10000 | Max OT solver iterations |
-| `cot_weights` | tuple | (0.25,0.25,0.25,0.25) | Weights for 4 COT levels |
-| `smooth` | bool | False | Spatial expression smoothing |
-| `smth_eta` | float | None | Smoothing kernel bandwidth |
-| `smth_nu` | float | None | Smoothing kernel sharpness |
-| `smth_kernel` | str | 'exp' | 'exp' or 'lorentz' kernel |
-| `copy` | bool | False | Return copy vs modify in place |
-
-### `ct.pl.plot_cell_communication` Key Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `plot_method` | str | 'cell' | 'cell', 'grid', or 'stream' |
-| `background` | str | 'summary' | 'summary', 'cluster', or 'image' |
-| `summary` | str | 'sender' | 'sender' or 'receiver' coloring |
-| `scale` | float | 1.0 | Arrow scale (smaller = longer arrows) |
-| `normalize_v` | bool | False | Normalize vectors to uniform length |
-| `stream_density` | float | 1.0 | Streamline density |
-| `grid_density` | float | 1.0 | Grid point density |
-
-For the complete parameter reference, read: `references/api_reference.md`
-
-## Workflow Summary
-
-```
-Spatial Transcriptomics Data (AnnData + spatial coords)
-    │
-    ├─ Step 0: Verify adata.obsm['spatial'] exists
-    ├─ Step 1: Discuss goals with user (scope, platform, database, organism)
-    │
-    ├─ Step 2: Preprocessing
-    │   ├─ normalize_total + log1p
-    │   ├─ Select L-R database (CellChat / CellPhoneDB / custom)
-    │   └─ Filter L-R pairs by gene detection
-    │
-    ├─ Step 3: Core COMMOT inference
-    │   └─ ct.tl.spatial_communication(adata, dis_thr=..., heteromeric=True, pathway_sum=True)
-    │
-    ├─ Step 4: Cluster-level summary
-    │   ├─ ct.tl.cluster_communication (label permutation)
-    │   └─ ct.tl.cluster_communication_spatial_permutation (spatial permutation)
-    │
-    ├─ Step 5: Signaling direction
-    │   ├─ ct.tl.communication_direction
-    │   └─ ct.pl.plot_cell_communication (cell/grid/stream)
-    │
-    ├─ Step 6: Cluster communication visualization
-    │   ├─ ct.pl.plot_cluster_communication_network
-    │   └─ ct.pl.plot_cluster_communication_dotplot
-    │
-    ├─ Step 7: Downstream (optional)
-    │   ├─ Communication impact (partial_corr / tree-based)
-    │   ├─ Communication-dependent genes (tradeSeq)
-    │   ├─ Spatial autocorrelation of signaling
-    │   └─ Group similar communication patterns
-    │
-    └─ Step 8: Custom visualization + report
-```
+For the complete function-by-function API (all parameters and defaults), read `references/api_reference.md`. For tuning guidance (how to choose `dis_thr`, `cot_eps_p`, `cot_rho`, `cot_nitermax`, smoothing, heteromeric rules), read `references/parameter_guide.md`.
 
 ## Reference Files
 
 - `references/api_reference.md` — Complete function-by-function API documentation with all parameters
-- `references/parameter_guide.md` — Detailed parameter tuning guide with platform-specific recommendations
+- `references/parameter_guide.md` — Parameter tuning guide, including the platform→`dis_thr` table
 - `references/methods_comparison.md` — COMMOT vs CellChat vs CellPhoneDB vs Squidpy ligrec vs LIANA+
 - `references/troubleshooting.md` — Common errors, edge cases, and solutions
 - `examples/basic_visium.py` — Complete Visium analysis script
 - `examples/basic_merfish.py` — Complete MERFISH analysis script
 - `examples/downstream_analysis.py` — Communication impact, DEG detection, grouping
-
-## Quantified Minimums
-
-- Distance threshold `dis_thr` must be set (not None) — the most critical parameter
-- At least 500 spatial locations after QC for reliable statistics
-- Use `n_permutations ≥ 500` for cluster-level p-values (≥1000 for publication)
-- Filter L-R pairs to those with `min_cell_pct ≥ 0.05` (5% of cells expressing)
-- Report: which database, distance threshold, OT parameters, and number of significant pairs
-- Save intermediate AnnData at each major step for reproducibility
-- Produce dual-format figures (PNG + PDF) for all key visualizations
-
-## Key References
-
-| Topic | Citation | DOI |
-|-------|----------|-----|
-| **COMMOT method** | Cang et al., *Nat Methods* 2023 | 10.1038/s41592-022-01728-4 |
-| **CellChatDB** | Jin et al., *Nat Commun* 2021 | 10.1038/s41467-021-21246-9 |
-| **CellPhoneDB v4.0** | Efremova et al., *Nat Protoc* 2020 | 10.1038/s41596-020-0292-x |
-| **Optimal Transport** | Peyré & Cuturi, *Foundations and Trends* 2019 | 10.1561/2200000073 |
+- `assets/analysis_template.py` — Minimal runnable template (fill in config, run end-to-end)
+- `scripts/setup_environment.sh` — Creates a conda environment with all dependencies

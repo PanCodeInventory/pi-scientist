@@ -16,12 +16,14 @@ import scvi
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import sparse
 
 
 def run_scvi_de(
     adata_path: str,
     groupby: str = "cell_type",
     batch_key: str = None,
+    counts_layer: str = "counts",
     output_dir: str = "scvi_results",
     n_latent: int = 30,
     max_epochs: int = 400,
@@ -41,6 +43,8 @@ def run_scvi_de(
         Column defining groups for DE
     batch_key : str
         Column for batch correction (optional)
+    counts_layer : str
+        Layer containing full-gene integer-valued counts
     output_dir : str
         Output directory
     n_latent : int
@@ -61,11 +65,29 @@ def run_scvi_de(
     print(f"Loading data from {adata_path}")
     adata = sc.read_h5ad(adata_path)
     
-    # Ensure we have raw counts
-    if adata.raw is not None:
-        print("Using raw counts from adata.raw")
-        adata.X = adata.raw.X.copy()
-    
+    # scVI requires counts. Never fall back to adata.raw, which commonly
+    # contains log-normalized expression in Scanpy workflows.
+    if counts_layer not in adata.layers:
+        raise ValueError(
+            f"Count layer '{counts_layer}' not found. "
+            f"Available layers: {list(adata.layers.keys())}"
+        )
+    if adata.raw is not None and adata.raw.n_vars > adata.n_vars:
+        raise ValueError(
+            "Legacy HVG-only AnnData detected: the available count layer is "
+            "restricted to HVGs. Rebuild from the original full-gene counts "
+            "before fitting scVI."
+        )
+    counts = adata.layers[counts_layer]
+    if counts.shape != adata.shape:
+        raise ValueError(
+            f"Count layer shape {counts.shape} does not match AnnData shape {adata.shape}"
+        )
+    values = counts.data if sparse.issparse(counts) else np.asarray(counts)
+    if not np.allclose(values, np.round(values), atol=1e-6):
+        raise ValueError(f"Layer '{counts_layer}' is not integer-valued count data")
+    print(f"Using full-gene counts from adata.layers['{counts_layer}']")
+
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
@@ -74,7 +96,8 @@ def run_scvi_de(
     scvi.model.SCVI.setup_anndata(
         adata,
         batch_key=batch_key,
-        labels_key=groupby
+        labels_key=groupby,
+        layer=counts_layer,
     )
     
     # Create model
@@ -295,6 +318,10 @@ def main():
     parser.add_argument("input", help="Input AnnData file (.h5ad)")
     parser.add_argument("--groupby", default="cell_type", help="Grouping column")
     parser.add_argument("--batch", default=None, help="Batch column for correction")
+    parser.add_argument(
+        "--counts-layer", default="counts",
+        help="Full-gene integer-valued count layer (default: counts)"
+    )
     parser.add_argument("--output", default="scvi_results", help="Output directory")
     parser.add_argument("--n-latent", type=int, default=30, help="Latent dimension")
     parser.add_argument("--max-epochs", type=int, default=400, help="Max training epochs")
@@ -308,6 +335,7 @@ def main():
         adata_path=args.input,
         groupby=args.groupby,
         batch_key=args.batch,
+        counts_layer=args.counts_layer,
         output_dir=args.output,
         n_latent=args.n_latent,
         max_epochs=args.max_epochs,

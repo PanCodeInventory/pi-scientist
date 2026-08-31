@@ -350,12 +350,6 @@ sample_name/
 
 ## 常见问题
 
-### 试剂版本检测失败
-
-**错误**：`Could not detect chemistry`
-
-**解决**：手动指定 `--chemistry` 和 `--darkreaction`
-
 ### 细胞数为 0
 
 **可能原因**：

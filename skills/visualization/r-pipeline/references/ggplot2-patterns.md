@@ -209,7 +209,7 @@ Set `scale` slightly > 1 to let adjacent ridges overlap (the visual signature of
 
 For GO / KEGG / Hallmark / Reactome enrichment. **Use `clusterProfiler` + `enrichplot`** — they are the de-facto standard companion to enrichment analysis and produce publication-ready output directly.
 
-Full design spec lives in `shared/figure-standards.md` ("Enrichment Bubble Plots"). Apply those decisions in R:
+Full design spec is below (Key design rules). Apply those decisions in R:
 
 ### Standard dotplot (single database)
 
@@ -263,7 +263,7 @@ ggplot(combined, aes(x = direction, y = reorder(term_short, neg_log_p),
   theme_base
 ```
 
-### Key design rules (from `shared/figure-standards.md`)
+### Key design rules
 
 | Element | Choice | Why |
 |---------|--------|-----|

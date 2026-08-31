@@ -131,37 +131,6 @@ dnbc4tools rna mkref \
   --chrM MT  # 或 chrM，取决于您的参考
 ```
 
-### mkgtf 过滤后 GTF 为空 / mkref 报 No exon features found
-
-**错误**：`mkgtf` 输出只有表头（0 基因），随后 `rna mkref` 报 `GTF Content Error: No exon features found`
-
-**原因**：`--type` 参数与 GTF 来源不匹配。mkgtf 默认 `--type gene_biotype`，但 **GENCODE** GTF 使用 `gene_type` 属性 → 一个基因都匹配不上。
-
-**诊断**（哪个 >0 就用哪个）：
-```bash
-grep -c 'gene_type "'    genes.gtf   # GENCODE 风格
-grep -c 'gene_biotype "' genes.gtf   # Ensembl 风格
-```
-
-**解决**：按 GTF 来源指定 `--type`：
-```bash
-# GENCODE
-dnbc4tools tools mkgtf --ingtf genes.gtf --output genes.filter.gtf --type gene_type
-# Ensembl 改为 --type gene_biotype
-```
-
-### rna run 报 FileNotFoundError: .../STAR
-
-**错误**：`rna run` 启动即报 `The following required files or directories were not found: <genomeDir>/STAR`
-
-**原因**：v3.0 的 `rna mkref` 把 `ref.json` 写在 `<genomeDir>/<species>/` 子目录下，但 `rna run` 读取时需要 **顶层 `<genomeDir>/ref.json`**。缺少顶层 ref.json 时，rna run 会回退去找一个不存在的 `STAR/` 目录。
-
-**解决**：mkref 完成后，把 ref.json 拷贝到顶层：
-```bash
-cp <genomeDir>/<species>/ref.json <genomeDir>/ref.json
-# 例：cp /database/GRCh38/Homo_sapiens/ref.json /database/GRCh38/ref.json
-```
-
 ---
 
 ## 分析流程问题

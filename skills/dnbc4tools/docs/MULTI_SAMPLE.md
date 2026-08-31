@@ -337,14 +337,4 @@ bash failed_sample.sh
 
 ## 模板文件
 
-### sample_sheet.tsv 模板
-
-```tsv
-SampleName	cDNA_Path	Oligo_Path
-# 基础格式
-sample1	/data/sample1_cDNA_R1.fq.gz;/data/sample1_cDNA_R2.fq.gz	/data/sample1_oligo_R1.fq.gz;/data/sample1_oligo_R2.fq.gz
-# 多 lane
-sample2	/data/sample2_L1_R1.fq.gz,/data/sample2_L2_R1.fq.gz;/data/sample2_L1_R2.fq.gz,/data/sample2_L2_R2.fq.gz	/data/sample2_oligo_R1.fq.gz;/data/sample2_oligo_R2.fq.gz
-```
-
-> 模板文件位于 `resources/templates/sample_sheet.tsv`
+模板文件位于 [`resources/templates/sample_sheet.tsv`](../resources/templates/sample_sheet.tsv)。

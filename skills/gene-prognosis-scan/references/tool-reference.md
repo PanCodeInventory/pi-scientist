@@ -1,52 +1,50 @@
 # Tool Parameter Reference
 
-Quick-reference for all tooluniverse tools used in the prognosis scan workflow. Call them via the in-process API — `ToolUniverse().run_one_function({"tool_name": "<PascalCaseTool>", "arguments": {...}})` — or, for one-off shell use, `tu run <tool> '<json>'`. No MCP server is involved; see SKILL.md Rule 10 for the CLI-vs-in-process name-format difference.
+Quick-reference for all tooluniverse tools used in the prognosis scan workflow. Call them via the in-process API — `ToolUniverse().run_one_function({"tool_name": "<PascalCaseTool>", "arguments": {...}})` — or, for one-off shell use, `tu run <tool> '<json>'`. See the In-Process API vs CLI table below for the name-format difference.
 
 ## Phase 0: Ensembl ID Lookup
 
-### `Ensembl_lookup_gene_by_symbol`
-Convert gene symbol → Ensembl gene ID. **Always run this first** — never hardcode Ensembl IDs.
-
-```json
-{
-  "tool_name": "Ensembl_lookup_gene_by_symbol",
-  "arguments": {
-    "symbol": "TP53",
-    "species": "human"
-  }
-}
-```
-
-**Returns**: `{ "symbol": "TP53", "ensembl_ids": [{"id": "ENSG00000141510", "type": "gene"}] }`
-
-**Pitfalls**:
-- One symbol may return multiple Ensembl IDs (e.g., IDS returns ENSG00000241489 and ENSG00000010404). Pick the protein-coding gene.
-- Always verify the returned `symbol` matches the input.
+Phase 0 does not use a tooluniverse tool — it resolves symbols via raw Ensembl/HGNC REST (two-pass live resolution). See SKILL.md Phase 0 for the procedure.
 
 ---
 
 ## Phase 1: HPA Prognosis Scan
 
-### `HPA_get_cancer_prognostics_by_gene`
+### `HPA_get_cancer_prognostics_by_gene` (in-process: `HPATool`)
 Query prognostic associations across all cancers for a single gene.
 
 ```json
 {
-  "tool_name": "HPA_get_cancer_prognostics_by_gene",
+  "tool_name": "HPATool",
   "arguments": {
+    "operation": "get_cancer_prognostics_by_gene",
     "ensembl_id": "ENSG00000141510"
   }
 }
 ```
 
-**Returns**: `{ "gene": "TP53", "prognostic_cancers_count": N, "prognostic_summary": [...] }`
-
-**Critical validation**: After each call, verify `gene` field matches expected gene name. A mismatch means the Ensembl ID was wrong.
+**Returns**:
+```json
+{
+  "gene": "TP53",
+  "ensembl_id": "ENSG00000141510",
+  "prognostic_cancers_count": 8,
+  "prognostic_summary": [
+    {
+      "cancer": "breast cancer (TCGA)",
+      "cancer_name": "Breast Invasive Carcinoma",
+      "prognostic_type": "unfavorable",
+      "p_value": 0.000123,
+      "n_patients": 1075
+    }
+  ]
+}
+```
 
 **Pitfalls**:
-- Wrong Ensembl ID → returns a *different gene's* data without error. Always validate.
-- 0 prognostic cancers is normal (HPA is conservative). Not an error.
-- HPA appends "(TCGA)" or "(validation)" to cancer names — use cancer-mapping.md to convert.
+- Wrong Ensembl ID → returns a *different gene's* data without error. Always validate the `gene` field (see SKILL.md Rule 2).
+- HPA may return an old/archived symbol in `gene` even when queried by the correct Ensembl ID (e.g., ENSG00000109066 → `gene: "TMEM104"` instead of `SLC38A12`). Accept if the Ensembl ID matches; annotate as old-symbol edge case.
+- MESO (mesothelioma) has only ~12 patients with both expression + survival data — too few for median-split survival. Exclude from the pan-cancer scan.
 
 ---
 
@@ -68,12 +66,26 @@ Independent survival validation using cBioPortal TCGA data.
 
 **⚠️ Parameter names**: `operation`, `cancer`, `gene` — note it's `gene` (not `gene1`).
 
-**Returns**: `{ "n_patients": N, "log_rank_p_value": P, "high_expression_group": {...}, "low_expression_group": {...} }`
+**Returns**:
+```json
+{
+  "cancer": "KIRC",
+  "gene": "AIG1",
+  "n_patients": 533,
+  "median_expression_cutoff": 5.234,
+  "high_expression_group": {"n": 267, "n_events": 69, "median_survival_months": null},
+  "low_expression_group": {"n": 266, "n_events": 106, "median_survival_months": 73.16},
+  "log_rank_p_value": 0.003628,
+  "log_rank_statistic": -2.9088
+}
+```
+Each group has exactly three fields: `n`, `n_events`, `median_survival_months`. If `median_survival_months` is `null` (not reached), use event-rate ratio `n_events/n` for direction (see SKILL.md Rule 6).
 
 **Pitfalls**:
 - `gene` parameter takes HGNC symbol (e.g., "TP53"), NOT Ensembl ID.
 - cBioPortal connection may fail intermittently. Retry once, then skip.
 - Small cohorts (e.g., KICH n=65) may have limited statistical power.
+- The original TIMER2.0/3.0 API is decommissioned; this tool uses a cBioPortal proxy. Data is reliable; note the source in reports.
 
 ---
 
@@ -117,6 +129,9 @@ Spearman correlation between two genes across TCGA samples.
 **⚠️ Parameter names**: `gene1` and `gene2` — NOT `gene` and `gene2`. This is a common mistake.
 
 **Returns**: `{ "n_samples": N, "spearman_r": R, "p_value": P }`
+
+**Pitfalls**:
+- Some gene×cancer correlations show r=±1.0 at n=5 (real API response, statistically unreliable). Flag with `low_n_warning` (n<20) and `extreme_low_n_warning` (n<20 and |r|≥0.8); do not delete but interpret with caution.
 
 ---
 
@@ -228,10 +243,13 @@ Find single-cell RNA-seq experiments where a gene is expressed.
 
 | Context | Tool Name Format | Call Pattern |
 |---------|-----------------|--------------|
-| CLI (`tu run`) | `CancerPrognosis_get_gene_expression` | `tu run CancerPrognosis_get_gene_expression cancer=KIRC gene=AIG1` |
+| CLI (`tu run`) | `CancerPrognosis_get_gene_expression` | `tu run CancerPrognosis_get_gene_expression '{"cancer":"KIRC","gene":"AIG1"}'` |
 | In-process Python | `CancerPrognosisTool` + `operation` | `ToolUniverse().run_one_function({"tool_name": "CancerPrognosisTool", "arguments": {"operation": "get_gene_expression", ...}})` |
 
-Use in-process API for batch jobs (>50 calls) to avoid ~6-8s subprocess startup per call.
+## General Notes
+
+- `GDC_get_gene_expression` returns only **file metadata**, not expression values. Use `CancerPrognosis_get_gene_expression` (cBioPortal tumor-only) for expression; bulk STAR-Counts download (tens of GB) is the only path to actual normal expression.
+- Pan-cancer BH FDR: ~924 tests per dimension (28 genes × 33 cancers), but FDR conditioning is on HPA-reported pairs only, not the full gene×cancer universe. Report both FDR and nominal p; note the FDR scope limitation in methods.
 
 ## Tool Discovery Commands
 

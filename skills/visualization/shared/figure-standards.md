@@ -1,35 +1,8 @@
 # Figure Standards — Single Source of Truth
 
-This file is the ONLY authority for figure quality in this workflow.
+This file is the ONLY authority for figure quality in this workflow. Every figure must pass all 32 standards below; the Pre-submission Checklist at the end is the minimum self-check.
 
-- **Workers** read it before producing any figure that goes into `results/plots/`.
-- **Reviewers** read it before reviewing any figure.
-
-Both sides reference this same file — never maintain separate standard copies.
-
-## Severity Levels
-
-| Level | Meaning | On violation |
-|-------|---------|--------------|
-| 🔴 BLOCKER | Objectively verifiable hard rule | → NEEDS FIX (auto-reject) |
-| 🟡 MAJOR | Important, but judged visually | → PASS WITH CONCERNS, recorded |
-
-Only 🔴 BLOCKERS trigger NEEDS FIX. 🟡 items are recorded in review notes but do not block.
-
-## MANDATORY BLOCKERS (🔴 — verify with these commands)
-
-These 6 are objectively verifiable via bash. Any failure ⇒ the figure is rejected.
-
-| # | Rule | Check command (run in bash) |
-|---|------|------------------------------|
-| 2 | No JPEG | `file <fig> \| grep -i jpeg` (hit = FAIL) |
-| 3 | Both `.png` and `.pdf` exist | `ls <base>.png <base>.pdf` (missing one = FAIL) |
-| 4 | Raster DPI ≥ 300 | `identify -format "%x %y\n" <fig>` ; fallback `python -c "from PIL import Image; print(Image.open('<fig>').info.get('dpi'))"` |
-| 7 | No `jet`/`rainbow`/`nipy_spectral`/`gist_rainbow` on continuous data | `grep -nEi "cmap[=('\"]+ *(jet\|rainbow\|nipy_spectral\|gist_rainbow)" <script>` (hit = FAIL) |
-| 11 | X AND Y axis labels non-empty | `grep -nE "set_xlabel\|set_ylabel\|labs\(" <script>` (absent/empty = FAIL) |
-| 18 | Top + right spines removed | `grep -nE "spines\['(top\|right)'\].*set_visible\(False\)" <script>` (matplotlib) or R theme removing them |
-
-If `identify` is unavailable, use the PIL one-liner; if both unavailable, downgrade rule 4 to 🟡 and note it — never silently pass.
+🔴 = hard rule (objectively verifiable) · 🟡 = judged visually.
 
 ## The 32 Standards
 
@@ -62,6 +35,8 @@ If `identify` is unavailable, use the PIL one-liner; if both unavailable, downgr
 16. 🟡 Legend text 7pt.
 17. 🟡 Panel labels (A/B/C) 10pt bold, uppercase.
 
+`theme_elegant()` must be called with `base_size = 9` to hit these sizes — its default (14) yields a 16.8pt title, violating the 10pt standard.
+
 ### Layout
 18. 🔴 Remove top + right spines; keep left + bottom.
 19. 🟡 Legend frameless.
@@ -85,7 +60,7 @@ If `identify` is unavailable, use the PIL one-liner; if both unavailable, downgr
 31. 🟡 Figure title is a noun phrase (e.g. "MASH vs Control").
 32. 🟡 NO annotation text inside the plot area. "Annotation text" = data-point labels, gene names, numeric values, p-values, arrow callouts, and similar ADD-ON text. Axis labels, ticks, title, and legend are STRUCTURAL text and are retained.
 
-## Pre-submission Checklist (workers self-run before declaring a step done)
+## Pre-submission Checklist
 
 - [ ] Saved as BOTH `.png` (300 DPI) and `.pdf`
 - [ ] Not JPEG

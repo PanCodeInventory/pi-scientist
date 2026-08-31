@@ -70,6 +70,13 @@ Detailed parameter reference for all major Squidpy functions. Recommendations ar
 | `moran` | Global spatial clustering, screening | High for large-scale patterns |
 | `geary` | Local spatial patterns, outliers | High for local discontinuities |
 
+### Interpretation
+
+- `I > 0`: positive spatial autocorrelation (clustering)
+- `I ≈ 0`: random spatial distribution
+- `I < 0`: checkerboard/dispersed pattern (rare in transcriptomics)
+- Strong spatial patterning: `|I| > 0.3` with `pval_norm_fdr_bh < 0.05`
+
 ---
 
 ## `sq.gr.nhood_enrichment`
@@ -99,6 +106,8 @@ Detailed parameter reference for all major Squidpy functions. Recommendations ar
 | `-1.96 < z < 1.96` | Not significant |
 | `-3.0 < z < -1.96` | Significant depletion (p < 0.05) |
 | `z < -3.0` | Very strong depletion (p < 0.001) |
+
+**Minimum sample:** ≥ 5 observations per cluster for reliable permutation.
 
 ---
 
@@ -302,14 +311,11 @@ If `adata.raw` doesn't exist, `ligrec` will fail or produce incorrect results.
 
 ## General Best Practices
 
-1. **Set random seeds**: `seed=42` in `nhood_enrichment`, `ligrec`
-2. **FDR correction**: Always use `corr_method='fdr_bh'` for Moran's I and ligrec with many clusters
-3. **Multi-scale features**: Extract image features at both `scale=1.0` and `scale=2.0`
-4. **Save intermediates**: `.write_h5ad()` between major analysis steps
-5. **Dual-format figures**: Save as both PDF (vector) and PNG (raster) — `dpi=150`
-6. **Log-normalized raw**: Always set `adata.raw` before subsetting to HVGs for ligrec
-7. **Platform awareness**: Use correct `coord_type` and `n_neighs` for spatial graph
-8. **Version pinning**: Squidpy v1.8.1 requires Python ≥ 3.11; pin versions in environment
+1. **FDR correction**: Always use `corr_method='fdr_bh'` for Moran's I and ligrec with many clusters
+2. **Multi-scale features**: Extract image features at both `scale=1.0` and `scale=2.0`
+3. **Save intermediates**: `.write_h5ad()` between major analysis steps
+4. **Platform awareness**: Use correct `coord_type` and `n_neighs` for spatial graph
+5. **Version pinning**: Squidpy v1.8.1 requires Python ≥ 3.11; pin versions in environment
 
 ---
 
@@ -324,6 +330,12 @@ If `adata.raw` doesn't exist, `ligrec` will fail or produce incorrect results.
 | Visium with complex patterns | `sepal()` | Diffusion-based; captures non-linear patterns |
 | Single-cell resolution (MERFISH) | `spatial_autocorr(mode='moran')` | Moran's I works well with many points |
 
+| Method | Pros | Cons | Best For |
+|--------|------|------|----------|
+| **Moran's I** | Fast, analytical p-values, well-understood | Linear only, global measure | First-pass screening |
+| **Sepal** | Captures non-linear patterns | Grid-based only, slower | Grid platforms with complex patterns |
+| **SpatialDE** (ext.) | Flexible Gaussian process | ~1000× slower, complex install | When computational time permits |
+
 ### Spatial Relationship Analysis
 
 | Scenario | Method | Rationale |
@@ -332,6 +344,16 @@ If `adata.raw` doesn't exist, `ligrec` will fail or produce incorrect results.
 | At what distance do clusters interact? | `co_occurrence()` | Distance-dependent probability |
 | Is the cluster pattern clustered or dispersed? | `ripley(mode='L')` | CSR deviation envelopes |
 | How central is each cluster? | `centrality_scores()` | Network centrality metrics |
+
+**nhood_enrichment vs. co_occurrence:**
+
+| Aspect | nhood_enrichment | co_occurrence |
+|--------|-----------------|---------------|
+| Method | Graph-based, permutation test | Distance-based, conditional probability |
+| Requires graph | Yes | No |
+| Distance info | Binary (neighbor or not) | Multi-scale distance bins |
+| Speed | Fast | Slower |
+| Best for | Discrete enrichment testing | Distance-dependent patterns |
 
 ### Cell Communication
 

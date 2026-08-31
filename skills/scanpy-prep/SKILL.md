@@ -1,21 +1,14 @@
 ---
 name: scanpy-prep
-description: 'Data preparation for single-cell analysis: loading, quality control, normalization, and preprocessing. Use this as the FIRST step for any scRNA-seq analysis before clustering or DE. Triggered by: load scRNA-seq, QC single-cell, normalize single-cell, filter cells. This is an upstream peer of scanpy-cluster and scanpy-de — run this first, then feed the processed AnnData to downstream skills.'
+description: 'Upstream prep for scRNA-seq analysis: load, QC/filter, and normalize single-cell data, then hand the processed AnnData to scanpy-cluster or scanpy-de. Use when the user loads scRNA-seq data, asks to QC or filter single-cell data, or needs normalization/preprocessing.'
+compatibility: 'Requires scanpy>=1.10. seurat_v3 and seurat_v3_paper HVG flavors additionally require scikit-misc (install scanpy[skmisc]).'
 ---
 
 # Scanpy-Prep: Data Loading, QC & Normalization
 
 ## Overview
 
-The upstream preparation phase of single-cell analysis. Everything downstream (clustering, annotation, DE) depends on clean, properly normalized data. Apply this skill **first**, before any other single-cell analysis step.
-
-## When to Use
-
-Use this skill as the **mandatory first step** whenever the user:
-- Loads scRNA-seq data (h5ad, 10X mtx, CSV)
-- Asks to QC or filter single-cell data
-- Needs to normalize or preprocess single-cell data
-- Starts any new single-cell analysis project
+The **upstream** preparation phase of single-cell analysis. Apply this skill **first**, before any other single-cell analysis step.
 
 ## Quick Start
 
@@ -45,82 +38,56 @@ adata = sc.read_h5ad('path/to/data.h5ad')
 adata = sc.read_csv('path/to/data.csv')
 ```
 
-### Understanding AnnData Structure
+## Data Storage Contract ⚠️ MANDATORY
+
+Keep the complete analysis gene universe in the main AnnData. HVGs are a feature-selection mask for PCA and clustering, not a reason to delete non-HVG genes.
+
+### Canonical Storage
+
+| Location | Content | Gene coverage | Use |
+|----------|---------|---------------|-----|
+| `adata.X` | library-size normalized, `log1p` expression | **all retained genes** | plotting, marker testing, gene scoring |
+| `adata.layers["counts"]` | original integer-valued counts | **all retained genes** | pseudobulk, DESeq2, scVI, count models |
+| `adata.var["highly_variable"]` | Boolean feature mask | typically 2,000–5,000 `True` | PCA and clustering feature selection |
+| `adata.obsm["X_pca"]` | PCA coordinates computed from HVGs | cells × PCs | neighbors, UMAP, Leiden |
+| `adata.raw` | optional full-gene log-normalized compatibility snapshot | all retained genes | legacy code using `use_raw=True` |
+
+`adata.raw` is **not raw counts**. Raw counts belong only in `layers["counts"]`.
+
+### Lifecycle
+
+```
+① Load counts → ② cell QC → ③ save full counts → ④ normalize + log1p
+                                            ↓
+                 layers["counts"] = full-gene integer-valued counts
+                 X = full-gene log-normalized expression
+                                            ↓
+                 ⑤ mark HVGs (do not slice genes)
+                                            ↓
+                 ⑥ PCA(mask_var="highly_variable")
+
+Final n_vars stays equal to the retained full-gene universe.
+Only the PCA input is restricted to HVGs.
+```
+
+### Critical Rules
+
+1. Validate that the selected input matrix is integer-valued counts before labeling it `counts`.
+2. Save counts with `adata.layers["counts"] = adata.X.copy()` before normalization.
+3. **Do not run** `adata = adata[:, adata.var.highly_variable]` in the canonical workflow.
+4. **Do not create** `layers["counts_full"]`; every layer is aligned to `X` and is sliced with AnnData.
+5. Do not run `regress_out` or zero-centered `scale` on the full matrix by default; they can overcorrect and/or densify sparse data.
+6. If a compatibility snapshot is needed, use `adata.raw = adata.copy()`, document that it contains log-normalized values, and read a gene from it as `adata.raw[:, "CD3E"].X`.
+
+### What “All Genes” Means
+
+Physical gene filtering such as `sc.pp.filter_genes(min_cells=3)` still removes genes. To preserve the complete input feature universe, record a QC flag instead of slicing:
 
 ```python
-adata.X          # Expression matrix (cells × genes)
-adata.obs        # Cell metadata (DataFrame)
-adata.var        # Gene metadata (DataFrame)
-adata.uns        # Unstructured annotations (dict)
-adata.obsm       # Multi-dimensional cell data (PCA, UMAP)
-adata.raw        # Raw data backup
-
-adata.obs_names  # Cell barcodes
-adata.var_names  # Gene names
+adata.var["qc_pass"] = adata.var["n_cells_by_counts"] >= 3
 ```
 
-## Data Storage Standards ⚠️ MANDATORY
-
-Every scRNA-seq project must follow this storage convention from the very first step.
-Violating this will break downstream analyses (scVI, DESeq2, visualization).
-
-### The Three Tiers of Data Storage
-
-| Tier | Location | Content | When to Save | When to Use |
-|------|----------|---------|-------------|-------------|
-| **Working Matrix** | `adata.X` | Current state of data (changes at every step) | Always present | Default for all scanpy functions |
-| **Raw Counts** | `adata.layers["counts"]` | Original integer counts (保险箱) | **Before** `normalize_total` | scVI, DESeq2, sctransform, SoupX |
-| **Full Gene Snapshot** | `adata.raw` | log-normalized, all genes (冰箱) | **After** log1p, **before** HVG subset | Dotplot, heatmap, marker visualization |
-
-### Lifecycle Diagram
-
-```
-① Load        ② Save counts     ③ Normalize     ④ Freeze raw    ⑤ HVG subset    ⑥ Scale
-原始counts  →  layers["counts"]  normalize_total  raw=adata       subset HVG      scale(max=10)
-             = adata.X.copy()   + log1p                          → 基因数减少
-
-adata.X:      counts            counts        log-norm         log-norm          log-norm      scaled
-              (原始)            (原始)        (全基因)          (全基因)           (仅HVG)       (仅HVG)
-
-layers:       counts            counts ✅     counts ✅        counts ✅          counts ⚠️    counts ⚠️
-              (手动存)          (完整基因)    (完整基因)        (完整基因)         (只剩HVG)     (只剩HVG)
-
-raw:          空                空            空               🔒 log-norm       🔒 不变        🔒 不变
-                                                                              (全基因)      (全基因)
-```
-
-### ⚠️ Critical Rules
-
-1. **`layers["counts"]` MUST use `.copy()`** — without it, it's a reference that will change with `adata.X`
-2. **`adata.raw = adata` MUST happen after log1p but before HVG subset** — this is the only correct position
-3. **`layers["counts"]` will lose genes after HVG subset** — if you need full-gene counts for downstream (e.g. pseudobulk DESeq2), save separately before subsetting (see Advanced below)
-4. **Never overwrite `adata.raw`** — it's set once; use `adata.raw.to_adata()` if you need to restore
-
-### How to Access Each Tier
-
-```python
-# Working matrix (current state)
-adata.X                          # scaled values after full pipeline
-
-# Original counts (may be subset to HVG after step ⑤)
-adata.layers["counts"]          # integer counts
-
-# Full gene log-normalized (never changes after freezing)
-adata.raw[:, "CD3E"].X           # ✅ works even if CD3E not in HVG
-adata.raw[:, marker_genes].X    # ✅ full gene expression for plotting
-adata.raw.to_adata()            # ✅ restore full AnnData from snapshot
-```
-
-### Advanced: Preserving Full-Gene Counts for Downstream
-
-If downstream tools need **full-gene original counts** (e.g. pseudobulk → DESeq2):
-
-```python
-# BEFORE HVG subset: export full counts separately
-adata.layers["counts_full"] = adata.layers["counts"].copy()
-# OR: do not physically subset, use HVG as a mask
-adata.var['highly_variable'] = adata.var['highly_variable']  # just flag, don't slice
-```
+At minimum, explicitly report whether “all genes” means all input genes or all genes retained after gene QC.
 
 ---
 
@@ -139,84 +106,101 @@ sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], inplace=True)
 sc.pl.violin(adata, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt'],
              jitter=0.4, multi_panel=True)
 
-# Filter cells and genes
-sc.pp.filter_cells(adata, min_genes=200)
-sc.pp.filter_genes(adata, min_cells=3)
-adata = adata[adata.obs.pct_counts_mt < 20, :]  # Adjust threshold per tissue
+# Inspect distributions before filtering and prefer per-sample MAD filtering.
+# If a tissue-informed hard cap is justified, apply it explicitly, for example:
+# adata = adata[adata.obs["pct_counts_mt"] < 10, :].copy()
 ```
 
-**QC thresholds by tissue** (see `references/parameter_selection.md` for details):
+There is no universal MT% threshold. Use per-sample MAD outlier detection by default and consult the single source-of-truth table in `references/parameter_selection.md` only for optional tissue-informed hard caps.
 
-| Tissue | MT% max | min_genes | max_genes | Notes |
-|--------|---------|-----------|-----------|-------|
-| PBMC/blood | 10-15% | 200-500 | 2500-5000 | Lower MT% expected |
-| Brain | 5-10% | 200-500 | 3000-6000 | Very low MT% |
-| Liver | 20-30% | 200-500 | 2000-4000 | Higher MT% normal |
-| Tumor | 20-30% | 200-500 | 2000-6000 | Variable quality |
-| Heart/muscle | 15-25% | 200-500 | 2000-4000 | High mitochondrial activity |
-
-Automated QC script:
+Automated QC script (MAD by default, preserves genes, writes `var["qc_pass"]`):
 ```bash
-python scripts/qc_analysis.py input.h5ad --output filtered.h5ad \
-    --mt-threshold 20 --min-genes 200 --min-cells 3
+python scripts/qc_analysis.py input.h5ad --output qc_filtered.h5ad \
+    --qc-mode mad --sample-key sample --min-cells 3
+# Omit --sample-key for a true single-sample object.
+
+# Manual mode requires an explicitly justified threshold:
+python scripts/qc_analysis.py input.h5ad --output qc_filtered.h5ad \
+    --qc-mode manual --mt-threshold 10 --min-genes 200
+```
+
+Then run full-gene normalization and HVG-masked PCA:
+```bash
+python scripts/preprocess_full_gene.py qc_filtered.h5ad \
+    --output processed_full_gene.h5ad --n-top-genes 3000 \
+    --batch-key sample
 ```
 
 ## Normalization and Preprocessing
 
-**⚠️ Follow this exact order.** Each step's position in the pipeline is critical.
+Follow this order while keeping the full gene universe in `X` and `layers["counts"]`.
 
 ```python
-# ──────────────────────────────────────────────────
-# Step 1: Save raw counts (BEFORE normalization)
-# MUST use .copy() — without it, this is just a reference
-# ──────────────────────────────────────────────────
+# Step 1: save full-gene counts before normalization
 adata.layers["counts"] = adata.X.copy()
 
-# ──────────────────────────────────────────────────
-# Step 2: Normalize + log-transform
-# ──────────────────────────────────────────────────
+# Step 2: full-gene normalized expression
 sc.pp.normalize_total(adata, target_sum=1e4)
 sc.pp.log1p(adata)
 
-# ──────────────────────────────────────────────────
-# Step 3: Freeze full-gene snapshot (AFTER log1p, BEFORE HVG subset)
-# Stores: log-normalized values + ALL genes + ALL var metadata
-# This is the ONLY correct position for adata.raw
-# ──────────────────────────────────────────────────
-adata.raw = adata
-
-# ──────────────────────────────────────────────────
-# Step 4: Identify highly variable genes
-# ──────────────────────────────────────────────────
-sc.pp.highly_variable_genes(adata, n_top_genes=2000)
+# Step 3: identify HVGs but DO NOT subset AnnData
+sc.pp.highly_variable_genes(
+    adata,
+    n_top_genes=3000,
+    batch_key="sample",  # remove when there is only one sample
+)
 sc.pl.highly_variable_genes(adata)
 
-# ──────────────────────────────────────────────────
-# Step 5: Subset to HVG (WARNING: layers["counts"] also gets subset!)
-# ──────────────────────────────────────────────────
-adata = adata[:, adata.var.highly_variable]
+# Step 4: optional compatibility snapshot; this is log-normalized, not counts
+adata.raw = adata.copy()
 
-# ──────────────────────────────────────────────────
-# Step 6: Regress out unwanted variation (optional — only if needed)
-# ──────────────────────────────────────────────────
-sc.pp.regress_out(adata, ['total_counts', 'pct_counts_mt'])
-
-# ──────────────────────────────────────────────────
-# Step 7: Scale data (max_value=10 clips extreme values)
-# ──────────────────────────────────────────────────
-sc.pp.scale(adata, max_value=10)
+# Step 5: PCA uses only HVGs while AnnData retains all genes
+sc.pp.pca(adata, n_comps=50, mask_var="highly_variable")
 ```
 
-### Verify Storage After Pipeline
+For `flavor="seurat_v3"`, supply count data explicitly:
 
 ```python
-# Quick sanity check — run this after the full pipeline
-print(f"adata.X shape: {adata.X.shape}")                    # (n_cells, n_hvg)
-print(f"adata.X dtype: {adata.X.dtype}")                   # float32 or float64
-print(f"layers['counts'] shape: {adata.layers['counts'].shape}")  # same as X
-print(f"layers['counts'] dtype: {adata.layers['counts'].dtype}")  # integer
-print(f"adata.raw shape: {adata.raw.n_obs} × {adata.raw.n_vars}")  # n_cells × ALL genes
-print(f"raw X range: [{adata.raw.X.min():.2f}, {adata.raw.X.max():.2f}]")  # log-norm range
+sc.pp.highly_variable_genes(
+    adata,
+    flavor="seurat_v3",
+    layer="counts",
+    n_top_genes=3000,
+    batch_key="sample",
+)
+```
+
+Do not regress or scale the full matrix by default. If a justified analysis requires those transformations, create a temporary HVG-only object and transfer only its PCA coordinates:
+
+```python
+adata_hvg = adata[:, adata.var["highly_variable"]].copy()
+sc.pp.regress_out(adata_hvg, ["total_counts", "pct_counts_mt"])
+sc.pp.scale(adata_hvg, max_value=10)
+sc.pp.pca(adata_hvg, n_comps=50)
+adata.obsm["X_pca"] = adata_hvg.obsm["X_pca"].copy()
+del adata_hvg
+```
+
+Parameter ranges — tissue-informed MT% caps, MAD settings, `target_sum`, and `n_top_genes` by dataset size — live in `references/parameter_selection.md`.
+
+### Completion Criterion — Verify Storage After Pipeline
+
+This check is the pipeline's completion criterion: run it after the final step, and every assertion must pass before Save Processed Data.
+
+```python
+n_hvg = int(adata.var["highly_variable"].sum())
+print(f"adata shape: {adata.shape}")
+print(f"counts shape: {adata.layers['counts'].shape}")
+print(f"HVGs: {n_hvg} / {adata.n_vars}")
+print(f"PCA shape: {adata.obsm['X_pca'].shape}")
+
+assert adata.layers["counts"].shape == adata.shape
+assert pd.api.types.is_integer_dtype(adata.layers["counts"].dtype)
+assert adata.n_vars > n_hvg
+assert "X_pca" in adata.obsm
+assert not adata.is_view
+if adata.raw is not None:
+    assert adata.raw.n_vars == adata.n_vars
 ```
 
 ## Save Processed Data
@@ -231,30 +215,13 @@ adata.obs.to_csv('results/cell_metadata.csv')
 
 ## After This Skill
 
-Once prep is complete, the processed AnnData is ready for:
-- **scanpy-cluster** — PCA, UMAP, Leiden clustering, marker genes, cell type annotation
+Once **upstream** prep is complete, the processed AnnData is ready for:
+- **scanpy-cluster** — neighbors, UMAP, Leiden clustering, marker genes, and cell type annotation, starting from the existing `X_pca`
 - **scanpy-de** — differential expression between conditions (pseudobulk, SCVI, Wilcoxon, MAST)
-
-If the user's goal is immediately clear, proactively ask whether to continue with clustering or DE.
-
-## Key Parameters
-
-| Parameter | Default | When to Adjust |
-|-----------|---------|----------------|
-| `min_genes` | 200 | Raise for high-quality data, lower for poor quality |
-| `pct_counts_mt` | 20% | Raise for liver/heart, lower for brain/blood |
-| `target_sum` | 1e4 | Standard for 10X data |
-| `n_top_genes` | 2000 | Reduce for small datasets (<3000 cells), increase for atlas |
-| `max_value` | 10 | Standard — clips extreme scaled values |
-
-For detailed parameter guidance, read `references/parameter_selection.md`.
 
 ## Common Pitfalls
 
-1. **Forgetting `.copy()` on `layers["counts"]`**: Without `.copy()`, `adata.layers["counts"]` is just a reference to `adata.X` — when `adata.X` changes during normalization, your "saved" counts are destroyed. **Always**: `adata.layers["counts"] = adata.X.copy()`
-2. **Setting `adata.raw` at the wrong time**: `adata.raw = adata` must happen **after** log1p and **before** HVG subset. Too early → raw contains unnormalized data. Too late → raw is missing genes that were filtered out.
-3. **Blindly applying default thresholds**: Mitochondrial content varies dramatically by tissue — adjust per tissue type
-4. **Filtering too aggressively**: Over-filtering can remove rare cell types — check distributions before cutting
-5. **Regressing out too much**: Only regress `total_counts` and `pct_counts_mt` unless there's a strong batch effect — over-correction removes biological signal
-6. **Using batch correction in prep**: Batch correction belongs in scanpy-cluster (after HVG) or scanpy-de (within SCVI model), not here
-7. **Assuming `layers["counts"]` has all genes after HVG subset**: It doesn't — `layers` is sliced along with `adata.X` when you subset genes. Use `adata.raw` for full-gene access, or save a separate copy before subsetting.
+1. **Trusting an arbitrary input `X`**: An existing H5AD may already be normalized. Validate integer-valued counts or require an explicit count layer before normalization.
+2. **Scaling the full matrix**: Zero-centered scaling can densify sparse data. PCA can use the HVG mask without scaling all genes.
+3. **Regressing by default**: `regress_out` can overcorrect and is not a universal preprocessing requirement.
+4. **Blindly applying thresholds**: QC varies by tissue and sample; inspect distributions and filter permissively.

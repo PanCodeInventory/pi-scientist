@@ -1,5 +1,7 @@
 # Parameter Selection Guide for scRNA-seq Analysis
 
+> **Compatibility**: The full-gene workflow requires Scanpy ≥1.10 because PCA uses `mask_var`. The `seurat_v3` and `seurat_v3_paper` flavors also require `scikit-misc` (`scanpy[skmisc]`).
+>
 > **来源依据**: This guide synthesizes parameter recommendations from authoritative sources:
 > - [sc-best-practices.org](https://www.sc-best-practices.org) (Theis lab, 2024+)
 > - Luecken & Theis (2019) _Mol Syst Biol_ 15:8746 — "Current best practices in single-cell RNA-seq analysis"
@@ -11,6 +13,16 @@
 
 ---
 
+## Contents
+
+1. [Decision Flow](#decision-flow-how-to-choose-parameters)
+2. [Quality Control Parameters](#1-quality-control-parameters)
+3. [Normalization Parameters](#2-normalization-parameters)
+4. [Highly Variable Gene Selection](#3-highly-variable-gene-selection)
+5. [Quick-Reference Workflows](#4-quick-reference-cheat-sheet)
+6. [Validation Checklist](#5-parameter-validation-checklist)
+7. [References](#6-references)
+
 ## Decision Flow: How to Choose Parameters
 
 Use this decision tree to systematically determine parameters. For each step, check the data characteristics and follow the recommendation.
@@ -19,14 +31,13 @@ Use this decision tree to systematically determine parameters. For each step, ch
 DATA LOADED
 │
 ├─ STEP 1: QC THRESHOLDS
-│  ├─ What's the tissue type?
-│  │  ├─ PBMC/blood → MT% < 8-10%, min_genes ≥ 200
-│  │  ├─ Brain/neurons → MT% < 5% (neurons have naturally low MT)
-│  │  ├─ Tumor → MT% can be higher; use MAD-based adaptive filtering
-│  │  └─ Other → Use MAD-based (5 MAD for counts/genes, 3 MAD for MT%)
-│  └─ Dataset size?
-│     ├─ <5K cells → manual inspection + conservative filtering
-│     └─ >5K cells → MAD-based automatic filtering
+│  ├─ Perform QC per sample; distributions can differ substantially by batch
+│  ├─ Default → permissive MAD filtering
+│  │  ├─ 5 MADs for counts/genes/top-gene fraction
+│  │  └─ 3 MADs for mitochondrial fraction
+│  ├─ Inspect QC metrics jointly before removing cells
+│  └─ Add a tissue-informed MT% hard cap only when biologically justified
+│     └─ Use the single table in §1.3 as a starting point, not a universal rule
 │
 ├─ STEP 2: NORMALIZATION
 │  ├─ UMI data → sc.pp.normalize_total(target_sum=1e4) + sc.pp.log1p
@@ -40,37 +51,7 @@ DATA LOADED
 │  │  └─ >50K cells → n_top_genes=3000–5000
 │  └─ Batch effects?
 │     └─ Yes → use batch_key= parameter
-│
-├─ STEP 4: PCA COMPONENTS (n_pcs)
-│  ├─ Check sc.pl.pca_variance_ratio(adata, log=True)
-│  │  ├─ Elbow at ∼10 PCs → use 15-20 PCs
-│  │  ├─ Elbow at ∼20 PCs → use 30-40 PCs
-│  │  └─ Elbow at ∼50+ PCs → use 50 PCs (data is complex)
-│  ├─ General rule: capture 85-90% variance
-│  └─ Default starting point: n_pcs=30 (for PBMC-sized data), n_pcs=50 (for complex tissues)
-│
-├─ STEP 5: NEIGHBORS (n_neighbors)
-│  ├─ Cell count?
-│  │  ├─ <5K cells → n_neighbors=10-15
-│  │  ├─ 5K–30K cells → n_neighbors=15 (default)
-│  │  ├─ 30K–100K cells → n_neighbors=20-30
-│  │  └─ >100K cells → n_neighbors=30-50
-│  └─ Goal: capture global structure → higher (30+)
-│     Goal: capture fine subtypes → lower (10-15)
-│
-├─ STEP 6: CLUSTERING RESOLUTION
-│  ├─ Expected cell types?
-│  │  ├─ Few types (e.g., 3-5) → resolution=0.3-0.5
-│  │  ├─ Moderate (5-15 types) → resolution=0.5-1.0
-│  │  └─ Many types (>15, e.g., brain) → resolution=1.0-2.0
-│  └─ Always try multiple: [0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0]
-│     → Inspect each with sc.pl.umap(color='leiden_r{X}')
-│     → Choose resolution that separates known populations without over-splitting
-│
-└─ STEP 7: DIFFERENTIAL EXPRESSION
-   ├─ Default: sc.tl.rank_genes_groups(adata, 'leiden', method='wilcoxon')
-   ├─ For publication: method='wilcoxon' (recommended by sc-best-practices)
-   └─ For speed on large data: method='t-test'
+
 ```
 
 ---
@@ -83,7 +64,7 @@ DATA LOADED
 |-----------|------------------|---------------|--------|
 | `min_genes` | 200–1000 | Check violin plot of `n_genes_by_counts`. Set threshold where density drops sharply. Blood/PBMC: 200-500; complex tissues: 500-1000 | Luecken & Theis 2019 |
 | `min_cells` | 3–10 | Conservative: 3. Stringent: 10. Genes in <3 cells provide no statistical power | scanpy default |
-| `pct_counts_mt` | 5–20% | PBMC: 5-8%. Tumor/stressed tissue: up to 20%. Use MAD-based automated threshold when possible. Check scatter plot of MT% vs total_counts | sc-best-practices.org |
+| `pct_counts_mt` | no universal cutoff | Apply per-sample 3-MAD detection by default; optionally add a justified hard cap from §1.3 | sc-best-practices.org |
 | `max_genes` | 2500–6000 | Remove potential doublets with unusually high gene counts. Check upper tail of `n_genes_by_counts` distribution | scanpy PBMC tutorial |
 
 ### 1.2 MAD-Based Automatic Filtering (Recommended)
@@ -107,24 +88,32 @@ adata.obs["outlier"] = (
     | is_outlier(adata, "pct_counts_in_top_20_genes", 5)
 )
 # 3 MADs for mitochondrial fraction — more stringent
-adata.obs["mt_outlier"] = is_outlier(adata, "pct_counts_mt", 3) | (
-    adata.obs["pct_counts_mt"] > 8  # hard cap at 8%
-)
+adata.obs["mt_outlier"] = is_outlier(adata, "pct_counts_mt", 3)
+
+# Optional only when justified for the tissue/sample; no universal default
+mt_hard_cap = None
+if mt_hard_cap is not None:
+    adata.obs["mt_outlier"] |= adata.obs["pct_counts_mt"] > mt_hard_cap
+
 adata = adata[(~adata.obs.outlier) & (~adata.obs.mt_outlier)].copy()
 ```
 
 **Key principle**: Be permissive. Filter out only clear outliers. You can always re-filter after annotation.
 
-### 1.3 Tissue-Specific QC Tips
+### 1.3 Optional Tissue-Informed MT% Hard Caps
 
-| Tissue | MT% cutoff | Notes |
-|--------|-----------|-------|
-| PBMC / Blood | 5–10% | Standard reference; well-characterized |
-| Brain / Neurons | 5% | Neurons have naturally low MT expression |
-| Heart / Muscle | 10–20% | Cardiomyocytes have high mitochondrial content — don't over-filter |
-| Tumor | 10–20% | High metabolic activity = higher MT; use MAD-based |
-| Liver | 10–15% | Hepatocytes are metabolically active |
-| Pancreas | 5–10% | Exocrine cells may have higher MT |
+Use this as the **only threshold table in this skill**. Values are starting ranges for review after per-sample MAD detection, not validated universal cutoffs.
+
+| Tissue | Illustrative hard-cap range | Notes |
+|--------|-----------------------------|-------|
+| PBMC / Blood | 5–10% | Inspect each sample; activated/stressed populations may differ |
+| Brain / Neurons | around 5% | Avoid treating all brain cell types as identical |
+| Heart / Muscle | 10–20% | Cardiomyocytes can have naturally high mitochondrial content |
+| Tumor | 10–20% | Strong tissue, treatment, and viability dependence; prioritize MAD |
+| Liver | 10–15% | Hepatocytes are metabolically active; inspect distributions jointly |
+| Pancreas | 5–10% | Exocrine and endocrine populations can differ |
+
+If no tissue-specific justification exists, omit the hard cap rather than silently choosing 5% or 20%.
 
 ### 1.4 Doublet Detection
 
@@ -147,53 +136,6 @@ adata = adata[(~adata.obs.outlier) & (~adata.obs.mt_outlier)].copy()
 - Full-length (Smart-seq2) → use `scran` size factor normalization or `sctransform`
 - Want to preserve counts → save as `adata.layers["counts"]` before normalization
 
-### 2.1 Data Storage Timing (CRITICAL)
-
-The order of operations determines what data is available to downstream tools.
-Follow this exact sequence:
-
-```
- ① Load data              adata.X = raw counts
- │
- ② adata.layers["counts"] = adata.X.copy()    ← BEFORE normalize
- │   adata.X = raw counts (unchanged)
- │   adata.layers["counts"] = raw counts (frozen copy)
- │
- ③ sc.pp.normalize_total(adata)
- │   sc.pp.log1p(adata)
- │   adata.X = log-normalized (all genes)
- │   adata.layers["counts"] = raw counts (unchanged) ✅
- │
- ④ adata.raw = adata                            ← AFTER log1p, BEFORE subset
- │   adata.raw = frozen snapshot of log-norm (all genes + var)
- │
- ⑤ sc.pp.highly_variable_genes(adata)
- │   adata.X = log-normalized (all genes, HVG flagged)
- │
- ⑥ adata = adata[:, adata.var.highly_variable]  ← subset happens here
- │   adata.X = log-normalized (HVG only)
- │   adata.layers["counts"] = raw counts (HVG only) ⚠️ genes lost!
- │   adata.raw = log-normalized (ALL genes) ✅ preserved
- │
- ⑦ sc.pp.scale(adata, max_value=10)
-     adata.X = scaled (HVG only)
-     adata.layers["counts"] = raw counts (HVG only)
-     adata.raw = log-normalized (ALL genes) ✅
-```
-
-**Which tier to use for which downstream tool:**
-
-| Downstream Tool | Data Source | Why |
-|----------------|-------------|-----|
-| scVI / scANVI | `adata.layers["counts"]` | Negative binomial model requires raw counts |
-| DESeq2 (pseudobulk) | `adata.layers["counts"]` | Needs raw counts for NB test |
-| sctransform | `adata.layers["counts"]` | Models raw counts directly |
-| PCA / UMAP / Leiden | `adata.X` | Uses scaled HVG matrix |
-| Dotplot / Heatmap | `adata.raw` (via `use_raw=True`) | Needs full gene set for markers |
-| Marker gene check | `adata.raw` | Markers may not be in HVG list |
-| SoupX / cellbender | `adata.layers["counts"]` | Ambient RNA correction needs raw matrix |
-
----
 
 ## 3. Highly Variable Gene Selection
 
@@ -211,11 +153,14 @@ Follow this exact sequence:
 ### 3.2 How to Assess HVG Selection
 
 ```python
-sc.pp.highly_variable_genes(adata, n_top_genes=2000)
-sc.pl.highly_variable_genes(adata)  # Check: most HVGs should have log(mean) > 0.01
+sc.pp.highly_variable_genes(adata, n_top_genes=3000)
+sc.pl.highly_variable_genes(adata)
+
+# Keep all genes; use the mask only for PCA
+sc.pp.pca(adata, n_comps=50, mask_var="highly_variable")
 ```
 
-If >90% of genes are flagged as HV (blue in the plot), increase `min_disp`. If <10% are flagged, decrease `min_mean`.
+When `n_top_genes` is specified, mean and dispersion cutoffs are ignored. For `flavor="seurat_v3"`, pass integer-valued counts with `layer="counts"`; dispersion-based `flavor="seurat"` expects log-transformed data.
 
 ### 3.3 n_top_genes by Application
 
@@ -229,152 +174,7 @@ If >90% of genes are flagged as HV (blue in the plot), increase `min_disp`. If <
 
 ---
 
-## 4. Dimensionality Reduction
-
-### 4.1 PCA: Number of Components (n_pcs)
-
-**Primary decision rule**: Use the elbow plot.
-
-```python
-sc.tl.pca(adata, svd_solver='arpack')
-sc.pl.pca_variance_ratio(adata, log=True, n_pcs=50)
-```
-
-**Heuristics** (fallback when elbow is ambiguous):
-
-| Dataset complexity | Recommended n_pcs | Indicator |
-|-------------------|-------------------|-----------|
-| Simple (PBMC, sorted cells) | 15–30 | Few distinct cell types; elbow sharp at <15 PCs |
-| Moderate (tissue biopsy) | 30–40 | Multiple cell types; elbow at 15–30 PCs |
-| Complex (brain, tumor, atlas) | 40–50 | Many cell types; elbow at 30–50+ PCs |
-| Large atlas (>100K cells) | 50–100 | Consider computing PCs on a subset first |
-
-**From sc-best-practices.org**: "The number of PCs is commonly set to the number of PCs that explain 90% or 95% of variance in your data."
-
-### 4.2 UMAP Parameters
-
-| Parameter | Default | Recommendation |
-|-----------|---------|---------------|
-| `n_neighbors` | 15 | See Section 5 below |
-| `min_dist` | 0.5 | 0.1–0.5: lower = tighter clusters; 0.5–1.0: higher = more spread |
-| `spread` | 1.0 | Increase to 2-5 for very large datasets |
-| `random_state` | 0 | Always set for reproducibility |
-
-### 4.3 t-SNE Parameters
-
-| Parameter | Default | Recommendation |
-|-----------|---------|---------------|
-| `perplexity` | 30 | 5–50: lower emphasizes local structure; higher emphasizes global. Default 30 works for most. Rule: perplexity < n_cells/3 |
-
----
-
-## 5. Neighborhood Graph: n_neighbors
-
-This is one of the most impactful parameters. It controls the trade-off between local detail and global structure.
-
-### 5.1 Decision Table
-
-| n_cells | n_neighbors | Rationale |
-|---------|-------------|-----------|
-| <1,000 | 5–10 | Very small dataset; need to capture any structure |
-| 1,000–5,000 | 10–15 | Standard range for small datasets |
-| 5,000–30,000 | 15 (default) | scanpy default; works well for PBMC-scale data |
-| 30,000–100,000 | 20–30 | More cells = more neighbors needed for stable graph |
-| >100,000 | 30–50 | Atlas-scale; emphasize global structure |
-
-### 5.2 Goal-Dependent Tuning
-
-| Goal | n_neighbors | Effect |
-|------|-------------|--------|
-| Detect fine subtypes | 5–15 | Higher resolution of small populations |
-| Map global relationships | 30–50 | Smoother embeddings; continuum preserved |
-| Balance (standard) | 15–20 | Good for most analyses |
-
-### 5.3 How to Test
-
-Try 3 values and visually inspect UMAP:
-
-```python
-for n in [10, 15, 30]:
-    sc.pp.neighbors(adata, n_neighbors=n, n_pcs=30, key_added=f'neighbors_n{n}')
-    sc.tl.umap(adata, neighbors_key=f'neighbors_n{n}')
-    sc.pl.umap(adata, color='leiden', title=f'n_neighbors={n}')
-```
-
-**Signs n_neighbors is too low**: Many tiny disconnected clusters; UMAP looks fragmented.
-**Signs n_neighbors is too high**: Clusters merge together; loss of distinct populations.
-
----
-
-## 6. Clustering Resolution
-
-### 6.1 Leiden Resolution Guide
-
-| Resolution | Expected # Clusters | Typical Use Case |
-|-----------|---------------------|------------------|
-| 0.2–0.3 | 3–5 | Very coarse: major lineages only |
-| 0.4–0.6 | 5–10 | Standard PBMC: major immune types |
-| 0.6–0.8 | 10–15 | Subtype detection within lineages |
-| 0.8–1.2 | 15–25 | Detailed subtypes; tissue-resident populations |
-| 1.2–2.0 | 25–50+ | Fine substructure; brain cell atlas |
-| >2.0 | 50+ | Very fine; may over-split; use with caution |
-
-### 6.2 Systematic Resolution Testing
-
-**Always test multiple resolutions**:
-
-```python
-for res in [0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0]:
-    sc.tl.leiden(adata, resolution=res, key_added=f'leiden_r{res}')
-
-# Compare visually
-sc.pl.umap(adata, color=[f'leiden_r{r}' for r in [0.5, 0.8, 1.0, 1.5]], ncols=2)
-```
-
-### 6.3 How to Pick the Right Resolution
-
-Ask these questions:
-1. **Are known marker genes cleanly separated?** — check `sc.pl.dotplot(adata, marker_genes, groupby='leiden_r{X}')`
-2. **Are clusters merging that should be separate?** — resolution too low
-3. **Are single populations splitting into many clusters?** — resolution too high
-4. **Do DEGs between neighboring clusters make biological sense?** — if not, merge or lower resolution
-
-### 6.4 Automated Resolution Selection
-
-Python tools for automatic resolution selection:
-
-```python
-# Method 1: scib — optimizes clustering against known labels or metrics
-import scib
-best_res = scib.metrics.cluster_optimal_resolution(
-    adata, cluster_key='leiden',
-    resolutions=[0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0]
-)
-```
-
-**chooseR** (R package): Uses subsampling-based robustness metrics. Run clustering at each resolution on subsamples; assess cluster stability. Choose resolution with best stability.
-
----
-
-## 7. Differential Expression Parameters
-
-| Parameter | Recommendation | Source |
-|-----------|---------------|--------|
-| `method` | `'wilcoxon'` | Recommended for publication; non-parametric, robust |
-| `method` (alternative) | `'t-test'` | Faster for large datasets; assumes normality |
-| `method` (advanced) | `'logreg'` | Logistic regression; can include covariates |
-| `n_genes` | All (default) | Filter p-values post-hoc |
-| `corr_method` | `'benjamini-hochberg'` | Standard FDR correction |
-
-**When to use which method**:
-- Most cases → `method='wilcoxon'` (recommended by sc-best-practices)
-- Very large data (>200K cells) → `method='t-test'` or `method='t-test_overestim_var'`
-- With batch/condition covariates → `method='logreg'`
-- Publication figures → `method='wilcoxon'`
-
----
-
-## 8. Quick-Reference Cheat Sheet
+## 4. Quick-Reference Cheat Sheet
 
 ### Standard PBMC Workflow (2,700 cells)
 
@@ -382,7 +182,7 @@ best_res = scib.metrics.cluster_optimal_resolution(
 # QC
 sc.pp.filter_cells(adata, min_genes=200)
 sc.pp.filter_genes(adata, min_cells=3)
-adata = adata[adata.obs.pct_counts_mt < 5, :]
+adata = adata[adata.obs.pct_counts_mt < 10, :].copy()  # illustrative cap from section 1.3 (PBMC 5-10%); inspect per sample
 
 # Normalization
 sc.pp.normalize_total(adata, target_sum=1e4)
@@ -392,7 +192,7 @@ sc.pp.log1p(adata)
 sc.pp.highly_variable_genes(adata, n_top_genes=2000)
 
 # PCA → Neighbors → UMAP
-sc.tl.pca(adata, svd_solver='arpack', n_comps=50)
+sc.pp.pca(adata, svd_solver='arpack', n_comps=50, mask_var='highly_variable')
 sc.pp.neighbors(adata, n_neighbors=10, n_pcs=30)  # n_pcs from elbow
 sc.tl.umap(adata)
 
@@ -406,13 +206,13 @@ sc.tl.leiden(adata, resolution=0.5)  # try 0.3, 0.5, 0.8
 # QC
 sc.pp.filter_cells(adata, min_genes=500)
 sc.pp.filter_genes(adata, min_cells=10)
-adata = adata[adata.obs.pct_counts_mt < 20, :]  # permissive
+adata = adata[adata.obs.pct_counts_mt < 20, :].copy()  # only if tissue/sample review justifies this cap
 
 # HVG
 sc.pp.highly_variable_genes(adata, n_top_genes=4000, batch_key='sample')
 
 # PCA → Neighbors
-sc.tl.pca(adata, svd_solver='arpack', n_comps=100)
+sc.pp.pca(adata, svd_solver='arpack', n_comps=100, mask_var='highly_variable')
 sc.pp.neighbors(adata, n_neighbors=30, n_pcs=50)
 sc.tl.umap(adata, min_dist=0.3, spread=3)
 
@@ -432,7 +232,7 @@ sc.pp.filter_genes(adata, min_cells=3)
 sc.pp.highly_variable_genes(adata, n_top_genes=1000, min_disp=0.3)
 
 # PCA
-sc.tl.pca(adata, n_comps=20)  # limited by n_cells
+sc.pp.pca(adata, n_comps=20, mask_var='highly_variable')  # limited by n_cells
 sc.pp.neighbors(adata, n_neighbors=5, n_pcs=10)  # lower for small data
 
 # Clustering
@@ -441,7 +241,7 @@ sc.tl.leiden(adata, resolution=0.3)  # start coarse
 
 ---
 
-## 9. Parameter Validation Checklist
+## 5. Parameter Validation Checklist
 
 Before finalizing your analysis, verify:
 
@@ -451,12 +251,14 @@ Before finalizing your analysis, verify:
 - [ ] **Clustering**: Tested ≥4 resolutions; clusters are biologically interpretable
 - [ ] **Markers**: Top DEGs per cluster match known cell type markers
 - [ ] **Batch**: If multi-sample, checked that clusters aren't purely batch-driven
-- [ ] **Doublets**: Applied doublet detection and removed likely doublets
-- [ ] **Reproducibility**: Set random_state for PCA, neighbors, UMAP, leiden
+- [ ] **Doublets**: Applied doublet detection per sample and reviewed likely doublets
+- [ ] **Full genes**: `adata.layers["counts"].shape == adata.shape` and `adata.n_vars > adata.var["highly_variable"].sum()`
+- [ ] **Data semantics**: `.X` is full-gene log-normalized expression; `layers["counts"]` is integer-valued counts
+- [ ] **Reproducibility**: Recorded package versions and set random states for stochastic steps
 
 ---
 
-## 10. References
+## 6. References
 
 1. Luecken MD, Theis FJ. "Current best practices in single-cell RNA-seq analysis: a tutorial." _Mol Syst Biol._ 2019;15(6):e8746. doi:10.15252/msb.20188746
 2. sc-best-practices.org — Theis lab, continuously updated best practices

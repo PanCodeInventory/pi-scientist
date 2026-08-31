@@ -247,71 +247,6 @@ CellDimPlot(seurat_obj, reduction = "umap")
 
 See `articles/Working_with_anndata_h5ad_files.html` for detailed workflow.
 
-## LLM-Assisted Visualization
-
-scplotter includes built-in LLM support for automatic plot generation:
-
-```r
-library(scplotter)
-library(tidyprompt)
-
-# Setup LLM provider
-provider <- tidyprompt::llm_provider_openai(
-    api_key = Sys.getenv("OPENAI_API_KEY")
-)
-
-# Create chat instance
-chat <- SCPlotterChat$new(provider = provider)
-
-# Ask for visualization
-chat$ask("Generate a UMAP plot colored by cell type for the ifnb_sub data")
-# Automatically identifies: CellDimPlot(ifnb_sub, group.by = "cell_type")
-
-# Iterate on visualization
-chat$ask("Make it a dot plot instead")
-chat$ask("Show only T cells and B cells")
-chat$ask("Add gene expression overlay for CD3D")
-```
-
-See `articles/Visualizing_data_with_LLMs.html` for complete workflow.
-
-## Key Parameters Reference
-
-### CellDimPlot
-- `reduction`: "umap", "tsne", "pca"
-- `group.by`: Metadata column for coloring
-- `palette`: Custom color vector
-- `point_size`: Point size (default: 1)
-- `alpha`: Transparency (0-1)
-
-### CellStatPlot
-- `group.by`: Grouping variable
-- `metrics`: QC metrics to plot
-- `plot_type`: "box", "violin", "dot"
-
-### FeatureStatPlot
-- `features`: Gene names to plot
-- `plot_type`: "violin", "box", "dot", "heatmap"
-- `group.by`: Grouping variable
-
-### CCCPlot
-- `plot_type`: "dot", "heatmap", "circle"
-- `top_n`: Top N interactions to show
-- `ligand_target`, `receptor_target`: Specific interactions
-
-## Built-in Datasets
-
-```r
-# Load example datasets
-data(ifnb_sub)        # Subsetted IFNB-stimulated PBMCs
-data(pancreas_sub)    # Mouse pancreas dataset
-data(cellphonedb_res) # CellPhoneDB results example
-
-# Explore dataset
-?ifnb_sub
-str(ifnb_sub)
-```
-
 ## Troubleshooting
 
 ### "Object not compatible with scplotter"
@@ -330,34 +265,6 @@ str(ifnb_sub)
 - Verify spatial coordinates are present in object
 - Check `SpatDimPlot` vs `CellDimPlot` for spatial data
 
-## External Resources
+## External Reference
 
-- **Official documentation**: https://pwwang.github.io/scplotter/
-- **GitHub repository**: https://github.com/pwwang/scplotter
-- **plotthis (core)**: https://github.com/pwwang/plotthis
-- **Seurat**: https://satijalab.org/seurat/
-- **Giotto**: https://drieslab.github.io/Giotto_website/
-- **scRepertoire**: https://github.com/BorchLab/scRepertoire
-- **LIANA**: https://github.com/saezlab/liana-py
-
-### Articles and Vignettes
-
-- **Visualizing data with LLMs**: `articles/Visualizing_data_with_LLMs.html`
-- **Working with anndata files**: `articles/Working_with_anndata_h5ad_files.html`
-- **Spatial data guide**: `articles/Knowing_your_spatial_data_and_visualization.html`
-
-#### Spatial Data Examples
-
-**Seurat-based:**
-- 10x Visium: `articles/Seurat_10x_Visium.html`
-- VisiumHD: `articles/Seurat_10x_VisiumHD.html`
-- Xenium: `articles/Seurat_Xenium.html`
-- Nanostring CosMx: `articles/Seurat_Nanostring_CosMx.html`
-- SlideSeq: `articles/Seurat_SlideSeq.html`
-
-**Giotto-based:**
-- Visium: `articles/Giotto_Visium.html`
-- Xenium: `articles/Giotto_Xenium.html`
-- CODEX: `articles/Giotto_CODEX.html`
-- Vizgen: `articles/Giotto_vizgen.html`
-- seqFISH: `articles/Giotto_seqFISH.html`
+Full parameter reference, built-in datasets, and vignettes (spatial examples, anndata workflows): **https://pwwang.github.io/scplotter/** (official docs). GitHub: https://github.com/pwwang/scplotter.
