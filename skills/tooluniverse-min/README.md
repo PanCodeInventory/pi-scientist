@@ -20,7 +20,7 @@ The bundled setup script does both.
 Prerequisite: [`uv`](https://astral.sh/uv) installed.
 
 ```bash
-bash scripts/setup/install-python-deps.sh
+bash setup/install-python-deps.sh
 ```
 
 What it does (idempotent):
@@ -53,12 +53,12 @@ TU=/path/to/venv/bin/tu ./scripts/tu-min status
 ### Whitelist not taking effect (2500+ tools load)
 The `cli.py` patch is missing or got overwritten by a reinstall. Re-run:
 ```bash
-bash scripts/setup/patches/apply-whitelist.sh ~/.venvs/tooluniverse/bin/python
+bash setup/patches/apply-whitelist.sh ~/.venvs/tooluniverse/bin/python
 ```
 If it reports `ERROR: 未找到原始 _get_tu() 代码块`, the installed tooluniverse version's `cli.py` structure differs from what the patch expects — apply `patches/cli-whitelist.patch` manually or pin `tooluniverse==1.2.6`.
 
 ### Tool calls hang or return empty
-External tools (PubMed, GDC, cBioPortal) hit the public internet. All API requests MUST go through the local proxy on **port 7897**. Check the proxy is up before debugging the skill.
+External tools (PubMed, GDC, cBioPortal) hit the public internet. All API requests MUST go through the local proxy — the wrapper sets `http_proxy`/`https_proxy` to `http://127.0.0.1:7890` (mihomo mixed-port). Check the proxy is up before debugging the skill.
 
 ### Need a tool that's outside the whitelist
 Run bare `tu` (not the wrapper) — it loads all ~2524 tools:

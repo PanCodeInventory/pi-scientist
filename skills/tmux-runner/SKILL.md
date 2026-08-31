@@ -1,13 +1,13 @@
 ---
 name: tmux-runner
-description: 'Worker-side execution infrastructure for long-running bioinformatics scripts. Used by the worker agent (not the main agent) to run a step under tmux so it survives agent timeouts, with a run log, an exit-status file, and an append-only manifest. Provides the canonical tmux_runner.sh wrapper, launch/monitor/verify workflow, session naming, and the <Module>/tmux/manifest.jsonl contract that the reviewer and sci_logs rely on.'
+description: 'Run a long-running step under tmux so it survives agent timeouts. Use when the plan marks a step **Long-running**: yes or >5min, the data is large, the step uses heavy tools (SCENIC, CellRanger, STAR, …), or you judge it will take more than ~2 minutes.'
 ---
 
 # Tmux Runner
 
 Canonical wrapper + workflow for executing a long-running analysis script inside a
 detached tmux session, so it survives agent timeouts and can be monitored in real
-time. Every run is recorded as one JSON line in `<Module>/tmux/manifest.jsonl`.
+time.
 
 The main agent does NOT invoke this directly. The **worker** loads it when it
 decides a step is long-running.
@@ -32,14 +32,9 @@ chmod +x <Module>/scripts/utils/tmux_runner.sh
 
 - Resolves `<Module>` from its own path (`<Module>/scripts/utils/`), so logs always
   land under the right module regardless of the cwd it is launched from.
-- Launches the script in a detached tmux session (cwd = analysis root).
-- Tees stdout/stderr to `<Module>/tmux/<session>.log`.
 - Captures the **script's** real exit code via `${PIPESTATUS[0]}` (not `tee`'s,
   which is ~always 0) → writes `<Module>/tmux/<session>.status` as
   `EXIT_STATUS:<code>`.
-- Appends one JSON line per run to `<Module>/tmux/manifest.jsonl`
-  (`ts`, `startTs`, `endTs`, `duration_s`, `session`, `module`, `script`,
-  `exitCode`, `logFile`, `statusFile`).
 
 ## When to use tmux
 
@@ -50,6 +45,9 @@ Use tmux for ANY of:
 - SCENIC, cell communication, trajectory analysis, or multi-sample processing
 - External tools (CellRanger, STAR, HISAT2, …)
 - You judge it will take more than ~2 minutes
+
+The ~2-minute judgment is the operative threshold; the plan markers are signals,
+not a separate threshold.
 
 Quick steps (QC filtering, simple plots, small data) → run directly via `bash`,
 no tmux.
@@ -67,8 +65,7 @@ Extra args after the script path are forwarded to the script (`$*`).
 ### Session naming
 
 `sci_<module>_<step>` — e.g. `sci_preprocessing_p01`, `sci_clustering_p02`,
-`sci_deg_p03`. Descriptive and unique to avoid collisions. The wrapper kills any
-existing session with the same name before launching.
+`sci_deg_p03`.
 
 ## Monitor (poll every 10–30 s)
 
@@ -79,25 +76,23 @@ cat <Module>/tmux/<session>.status 2>/dev/null || echo "Still running"
 tail -1 <Module>/tmux/manifest.jsonl
 ```
 
-Between polls you may do other preparatory work. When the session no longer
-exists, read the `.status` file for the exit code; if non-zero, read the log to
-diagnose.
+When the session no longer exists, read the `.status` file for the exit code; if
+non-zero, read the log to diagnose.
 
 ## Verify completion
 
 After the session ends:
 
-1. `cat <Module>/tmux/<session>.status` → expect `EXIT_STATUS:0`
-2. All expected output files exist
-3. The log shows no errors/warnings
-4. `tail -1 <Module>/tmux/manifest.jsonl` shows `"exitCode":0`
+1. `cat <Module>/tmux/<session>.status` → expect `EXIT_STATUS:0` (the manifest's
+   `"exitCode"` is the same value — one check suffices)
+2. Every output file the stage's plan declares, present and non-empty
+3. Grep the log for the script's error markers (traceback, ERROR, WARNING) — zero
+   matches
 
 ## Error handling
 
-- **Script fails**: read the log, fix the script, re-launch (the wrapper kills the
-  prior session automatically).
-- **Status shows non-zero exit**: read the full log, identify the error, fix and
-  retry.
+- **Non-zero exit / script fails**: read the full log, identify the error, fix the
+  script, and re-launch.
 - **No status file after a long wait**: possibly hung — inspect with
   `tmux capture-pane -t <name>`.
 
@@ -113,9 +108,7 @@ tmux kill-session -t "sci_<module>_<step>" 2>/dev/null || true
 
 A tmux run creates, under the module:
 
-- `scripts/utils/tmux_runner.sh` — the wrapper → handoff role `tmux_wrapper`
-- `tmux/<session>.log` — full run log → handoff role `tmux_log`
-- `tmux/<session>.status` — `EXIT_STATUS:<code>` → handoff role `tmux_status`
-- `tmux/manifest.jsonl` — append-only run history (one JSON line per run)
-
-`.log` and `.status` are overwritten on re-run; `manifest.jsonl` is append-only.
+- `scripts/utils/tmux_runner.sh` → handoff role `tmux_wrapper`
+- `tmux/<session>.log` → handoff role `tmux_log`
+- `tmux/<session>.status` → handoff role `tmux_status`
+- `tmux/manifest.jsonl` → append-only run history (one JSON line per run)

@@ -1,6 +1,6 @@
 ---
 name: scanpy-cellcommunication
-description: 'Cell-cell communication (CCC) inference from single-cell data. Two approaches: CellChat (R, pathway-level visualization, probabilistic modeling) and LIANA+ (Python, multi-method consensus scoring across 8+ methods). Use this AFTER scanpy-cluster and scanpy-annotate when cell types are known. Triggered by: cell-cell communication, 细胞通讯, 配体受体, ligand-receptor, intercellular communication, cellchat, liana, CellPhoneDB, NATMI, CCC inference, signaling network, 细胞互作, LR interaction, cell communication analysis, run CellChat, run LIANA, 信号通路推断.'
+description: 'Cell-cell communication (CCC) inference from single-cell data. Use after cell types are annotated. Triggered by: cell-cell communication, 细胞通讯, ligand-receptor, cellchat, liana, signaling network.'
 ---
 
 # Scanpy-CellCommunication: Cell-Cell Communication Inference
@@ -17,9 +17,13 @@ Infer ligand-receptor interactions between cell types from scRNA-seq data. Two c
 | **Best for** | Deep biological interpretation of specific pathways | Comprehensive discovery, method benchmarking |
 | **Environment** | `mamba activate cellchat` | `pip install liana` or mamba |
 
+LIANA+ consensus scores are more robust than any single method; if using CellChat alone, validate key findings with an orthogonal approach.
+
 Both require annotated cell types — run **scanpy-annotate** first.
 
 ## Method Selection
+
+One decision, made here: CellChat (R) for pathway-level insight, LIANA+ (Python) for consensus discovery.
 
 ```
            Want pathway-level insight?
@@ -34,13 +38,13 @@ Both require annotated cell types — run **scanpy-annotate** first.
                            (consensus)  (default)
 ```
 
-**When to use CellChat**: Deep signaling pathway dissection, publication-quality network diagrams, comparative analysis across conditions with pathway-centric insight.
+**CellChat** — deep signaling pathway dissection, publication-quality network diagrams, comparative analysis across conditions with pathway-centric insight.
 
-**When to use LIANA+**: Quick discovery in Python ecosystem, method comparison/validation, spatial transcriptomics, when you need consensus across CellPhoneDB + CellChat + NATMI + other methods simultaneously.
+**LIANA+** — quick discovery in the Python ecosystem, method comparison/validation, spatial transcriptomics, consensus across CellPhoneDB + CellChat + NATMI + other methods simultaneously.
 
 ## Step 0: Gather Requirements
 
-Before running any analysis, **always ask the user** to clarify their intent. The same data can be analyzed in fundamentally different ways depending on the biological question. Adapt question wording to the user's language (Chinese or English).
+Before running any analysis, **always ask the user** to clarify their intent. The same data can be analyzed in fundamentally different ways depending on the biological question.
 
 **Q1 — Analysis goal:**
 > "What do you want to learn from cell communication analysis?"
@@ -61,11 +65,11 @@ Before running any analysis, **always ask the user** to clarify their intent. Th
 If the AnnData is accessible, first list the available cell types from `adata.obs['cell_type'].unique()` before asking.
 
 **Q3 — Technical direction:**
-> "Which approach?"
+> "Which approach? (See Method Selection above.)"
 >
-> - A) CellChat (R) — deeper pathway analysis, richer viz, but requires R
-> - B) LIANA+ (Python) — multi-method consensus, stays in Python, but less pathway detail
-> - C) Both — run LIANA+ first for discovery, then CellChat for validation/highlights
+> - A) CellChat (R)
+> - B) LIANA+ (Python)
+> - C) Both — LIANA+ first for discovery, then CellChat for validation/highlights
 
 **Q4 — Organism (if not auto-detected):**
 > "Human or mouse?" (Determines database: CellChatDB.human vs CellChatDB.mouse / LIANA+ resource)
@@ -76,7 +80,7 @@ Base your recommendations on the answers:
 - Goal D (comparison) → run independently per condition, then compare
 - Small dataset (<5 cell types) → either works; large dataset (>15 types) → LIANA+ is faster
 
-Do NOT proceed to run analysis until the user has answered at minimum Q1 and Q2.
+Do NOT proceed to run analysis until Q1–Q4 are answered (organism may be auto-detected from the data).
 
 ## CellChat (R)
 
@@ -137,26 +141,17 @@ netVisual_aggregate(cellchat, signaling = "WNT", layout = "circle")
 
 ### Common Visualizations
 
-```r
-# Chord diagram
-netVisual_chord_cell(cellchat, signaling = "TGFb")
-
-# Heatmap of signaling roles
-netAnalysis_signalingRole_heatmap(cellchat, pattern = "outgoing")
-
-# Comparative analysis (condition1 vs condition2)
-netVisual_diffInteraction(cellchat1, cellchat2)
-```
+Chord diagrams, signaling-role heatmaps, comparative diffInteraction plots, and more: read `references/visualization-guide.md`.
 
 ### Troubleshooting
 
-NMF install fails:
-```r
-Sys.setenv(R_REMOTES_NO_ERRORS_FROM_WARNINGS = "true")
-devtools::install_github("renozao/NMF")
-```
+NMF install failures, out-of-memory errors, empty plots, and more: read `references/troubleshooting.md`.
 
-For detailed workflow, read: `references/workflow-detailed.md`
+### Database
+
+Custom databases, subsetting by pathway/category, gene-name mapping: read `references/database-reference.md`.
+
+For the full CellChat pipeline (input formats, custom databases, comparative analysis), read: `references/cellchat-workflow-detailed.md`.
 
 ## LIANA+ (Python)
 
@@ -228,22 +223,11 @@ top = liana_res[(liana_res['magnitude_rank'] < 0.05) &
 
 ### Available Methods in LIANA+
 
-| Method | Score Column | Description |
-|--------|-------------|-------------|
-| CellPhoneDB | `cellphonedb` | Permutation-based statistical testing |
-| CellChat | `cellchat` | Probabilistic model (same method, Python wrapper) |
-| NATMI | `natmi` | Weighted expression product |
-| Connectome | `connectome` | Edge specificity scoring |
-| log2FC | `log2fc` | Fold-change based |
-| Consensus | (meta) | Rank aggregation across all methods |
+CellPhoneDB, CellChat, NATMI, Connectome, log2FC, and more — full comparison and when-to-use: read `references/methods_comparison.md`.
 
 ### Spatial Analysis
 
-```python
-# Spatial bivariate analysis
-li.mt.bivar(adata, groupby='cell_type',
-            resource_name='consensus', use_raw=True)
-```
+Spatial bivariate analysis (`li.mt.bivar`) and cross-validation with expression results: read `references/liana-workflow-detailed.md` (§5 Spatial Transcriptomics).
 
 ### Key Parameters
 
@@ -254,22 +238,24 @@ li.mt.bivar(adata, groupby='cell_type',
 | `min_cells` | 5 | Raise if cell types have <10 cells |
 | `resource_name` | 'consensus' | Use 'cellphonedb' or 'cellchatdb' for single-resource analysis |
 
+For the full LIANA+ pipeline (individual methods, differential communication, custom resources), read: `references/liana-workflow-detailed.md`. Complete function signatures and parameters: read `references/api_reference.md`.
+
+## Examples & Scripts
+
+Runnable end-to-end scripts: `examples/` (CellChat + LIANA+ basic, comparative, spatial, Seurat integration), `scripts/` (environment setup, LIANA+ CLI), `assets/analysis_template.py` (LIANA+ template).
+
 ## Shared Best Practices
 
 1. **Always use raw counts**: Both methods expect un-normalized expression. Set `use_raw=TRUE` / `use_raw=True`.
 2. **Filter small cell populations**: Groups with <10 cells produce unreliable statistics. Merge or remove them first.
-3. **Validate with known biology**: Cross-reference top interactions against literature for the tissue/cell types under study.
-4. **Check gene symbols**: CellChat uses Seurat gene names; LIANA+ expects HGNC symbols. Convert if needed.
+3. **Validate with known biology**: Cross-reference top interactions against literature for the tissue/cell types under study. Prioritize pathways with multiple supported interactions — single strong hits without biological context may be noise.
+4. **Check gene symbols**: CellChat uses Seurat gene names; LIANA+ expects HGNC symbols. Human vs mouse databases use different gene names — convert if needed.
 5. **Compare conditions separately**: Run analysis on each condition independently, then compare — don't mix conditions in a single run.
-6. **Method consensus > single method**: LIANA+ consensus scores are more robust than any individual method. If using CellChat alone, validate key findings with at least one orthogonal approach.
 
 ## Common Pitfalls
 
-1. **Missing cell type annotations**: Both methods require labeled cells — run scanpy-annotate first
-2. **Gene symbol mismatches**: Human vs mouse databases have different gene names
-3. **expr_prop too strict**: Setting >0.3 filters out real rare interactions
-4. **Over-interpreting isolated hits**: Single strong interactions without biological context may be noise — prioritize pathways with multiple supported interactions
-5. **Forgetting population.size**: In CellChat, not accounting for population size inflates interactions from abundant cell types
+1. **expr_prop too strict**: Setting >0.2 filters out real rare interactions
+2. **Forgetting population.size**: In CellChat, not accounting for population size inflates interactions from abundant cell types
 
 ## Next Steps
 

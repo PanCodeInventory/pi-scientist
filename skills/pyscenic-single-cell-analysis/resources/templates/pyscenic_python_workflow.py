@@ -1,7 +1,7 @@
 """pySCENIC Python API workflow template.
 
 This is an outline meant to be adapted.
-Use raw counts (integers) for GRN inference.
+Use raw counts (integers) for GRN inference — see the raw-counts rule in SKILL.md (Overview).
 """
 
 from __future__ import annotations

@@ -230,7 +230,7 @@ cat("Next steps:\n")
 cat("  1. Restart R session\n")
 cat("  2. Load CellChat: library(CellChat)\n")
 cat("  3. Run examples from: examples/\n")
-cat("  4. See tutorial: references/workflow-detailed.md\n")
+cat("  4. See tutorial: references/cellchat-workflow-detailed.md\n")
 
 cat("\nFor issues:\n")
 cat("  - Check: references/troubleshooting.md\n")

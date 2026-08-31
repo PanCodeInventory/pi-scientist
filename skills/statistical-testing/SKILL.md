@@ -1,12 +1,12 @@
 ---
 name: statistical-testing
-description: 'Guidance for choosing and reporting statistical tests in bioinformatics. Triggered by: statistical test, p-value, DEG, differential expression, enrichment, significance, ANOVA, t-test, Wilcoxon, 多重比较, 统计检验, 差异分析, 显著性. Provides decision trees for test selection, multiple testing correction, and reporting standards.'
+description: 'Statistical test selection and reporting for bioinformatics. Use when the user mentions statistical test, differential expression, enrichment, multiple testing correction, or significance.'
 ---
 
 # Statistical Testing — 检验选择与报告指南
 
 ## Overview
-为生信分析中的统计检验提供选择决策树、参数指导和报告规范。确保检验方法有据可依，报告完整。
+统计检验 (statistical test) 的选择与报告：按场景查表选方法，报告时逐项核对 Reporting Standards。
 
 ## Decision Trees
 
@@ -27,7 +27,7 @@ description: 'Guidance for choosing and reporting statistical tests in bioinform
 | Holm-Bonferroni | 比 Bonferroni 更强但仍然保守 | 中等数量检验 |
 | q-value (Storey) | 大规模检验 | 基因组-wide 研究 |
 
-注意：DESeq2 和 edgeR 自带校正，不要重复校正。
+注意：DESeq2 和 edgeR 自带 BH 校正（padj 已是校正后），不要重复校正。
 
 ### 组间比较
 | 数据特征 | 推荐方法 | 前提假设 |
@@ -75,40 +75,10 @@ description: 'Guidance for choosing and reporting statistical tests in bioinform
 |------|----------|
 | 对非正态数据用参数检验 | 先检验正态性 (Shapiro-Wilk)，非正态用非参 |
 | 不做多重比较校正 | 始终报告 padj，标注校正方法 |
-| 只看 p 值不看效应量 | 小 p 值 + 小效应量可能无生物学意义 |
+| 只看 p 值，混淆统计显著与生物意义 | 统计显著 ≠ 生物学重要；小 p 值 + 小效应量可能无生物学意义，报告效应量 |
 | P-hacking (反复子集化) | 预先定义分析方案，避免事后反复调整 |
-| 混淆统计显著与生物意义 | 统计显著 ≠ 生物学重要，报告效应量 |
-| DESeq2 结果再校正 | DESeq2 padj 已经是 BH 校正后的，不要重复 |
 | 忽略样本量对 power 的影响 | 事前做 power analysis |
 
 ## Quick Reference
 
-### 检验正态性
-```python
-from scipy import stats
-stats.shapiro(data)  # n < 5000
-stats.normaltest(data)  # n >= 20
-# 或可视化
-import matplotlib.pyplot as plt
-stats.probplot(data, plot=plt)
-```
-
-### 计算效应量
-```python
-# Cohen's d
-import numpy as np
-def cohen_d(g1, g2):
-    n1, n2 = len(g1), len(g2)
-    pooled_std = np.sqrt(((n1-1)*np.std(g1,ddof=1)**2 + (n2-1)*np.std(g2,ddof=1)**2) / (n1+n2-2))
-    return (np.mean(g1) - np.mean(g2)) / pooled_std
-
-# log2 fold change (生信常用)
-log2fc = np.log2(np.mean(group_treated) / np.mean(group_control))
-```
-
-### 多重比较校正
-```python
-from statsmodels.stats.multitest import multipletests
-rejected, padj, _, _ = multipletests(pvals, method='fdr_bh')  # Benjamini-Hochberg
-rejected, padj, _, _ = multipletests(pvals, method='bonferroni')  # Bonferroni
-```
+需要代码实现时（正态性检验、效应量、多重比较校正），见 [quick-reference.md](quick-reference.md)。

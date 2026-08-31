@@ -1,11 +1,11 @@
 ---
 name: choose-single-cell-gene-set-scoring
-description: Choose, justify, parameterize, and validate gene-set scoring methods for scRNA-seq, snRNA-seq, spatial transcriptomics spots, pseudobulk, and cluster-average expression. Use when comparing or selecting mean/Z scores, Seurat AddModuleScore, Scanpy score_genes, UCell, AUCell, singscore, JASMINE, ssGSEA, GSVA, decoupleR, PROGENy, or VIPER; when reviewing a gene signature; when designing a scoring decision tree; or when planning, implementing, or interpreting cell-state, pathway, regulon, and cross-dataset scores.
+description: Choose a gene-set scoring method by its estimand — the biological quantity the score estimates. Use when selecting among mean/Z, module, rank, sample-level, or network scoring methods; when reviewing a gene signature; or when interpreting a score's estimand.
 ---
 
 # Choose Single-Cell Gene-Set Scoring
 
-Select the method by the biological quantity being estimated, the analysis unit, and the comparison design. Treat method selection, signature quality control, and validation as one workflow.
+Treat method selection, signature quality control, and validation as one workflow.
 
 ## Run the workflow
 
@@ -33,11 +33,11 @@ Collect or infer:
 - signature size, identifier type, dataset overlap, per-cell coverage, sparsity, and sequencing depth;
 - biological replication and the level at which inference will be performed.
 
-Do not treat cells as biological replicates. Use cell-level scores for visualization and heterogeneity, then perform condition-level inference at the biological-sample level, usually after aggregating scores within `sample × cell_type` or using a model that preserves sample as the replicate.
+Do not treat cells as biological replicates; see [references/validation.md](references/validation.md) for the valid group-level inference patterns.
 
 ### 3. Audit the signature before scoring
 
-Perform these checks and report material failures:
+Perform these checks and report every failing check with the observed evidence:
 
 1. Normalize gene identifiers, resolve species and ortholog mapping, remove duplicates, and report missing genes.
 2. Reject overlap between positive and negative sets unless the conflict is explicitly resolved.
@@ -74,36 +74,19 @@ Is the target TF activity?
                └─ no: within-object exploration → AddModuleScore or score_genes
 ```
 
-Use mean expression or mean gene-wise Z-score only as a transparent baseline. Consider JASMINE when dropout and signature coverage are central to the question, but explicitly test dependence on library size because detection proportion is depth-sensitive.
-
 Read [references/methods.md](references/methods.md) when selecting among close alternatives, explaining parameters, or implementing a method. Read [references/validation.md](references/validation.md) when designing confirmatory analysis, cross-dataset comparisons, thresholds, or statistical tests.
 
 ### 5. Preserve the method's interpretation
 
-State what the returned number means and what it does not mean:
-
-- Interpret AddModuleScore or `score_genes` as target expression relative to matched control genes in the current analysis context. Do not call zero a biological boundary or a negative score pathway inhibition.
-- Interpret AUCell as enrichment near the top of a cell's expression ranking. Do not call its AUC a fold change.
-- Interpret UCell and singscore as within-cell rank statistics. Their reduced dependence on object composition does not remove depth, dropout, gene-universe, or batch effects, so raw values are not automatically calibrated across studies.
-- Interpret GSVA and ssGSEA as sample-level relative enrichment. Cluster averages without biological-sample replication do not support condition-level inference.
-- Interpret PROGENy, VIPER, and related decoupleR results as model-based activity estimates conditional on the footprint or regulon quality.
+State what the returned number means and what it does not mean. The per-method interpretation and overclaim guards are in [references/methods.md](references/methods.md).
 
 ### 6. Recommend one primary method and one purposeful check
 
 Choose a primary method that matches the estimand. Add a secondary method only when it tests a real sensitivity, preferably from a different scoring family; do not present a vote among many algorithms.
 
-For ordinary single-cell signatures, use these defaults unless the design overrides them:
-
-- Use **UCell** for composition-robust per-cell ranking and separately computed objects.
-- Use **AddModuleScore** or **Scanpy `score_genes`** for fast within-object exploration with matched controls.
-- Use **AUCell** when the target is an active-cell subset or top-rank regulon enrichment.
-- Use **singscore** for a validated up/down signature.
-- Use **PROGENy/decoupleR** for signaling footprints and **VIPER/decoupleR** for TF regulons.
-- Use **GSVA/ssGSEA** on appropriately normalized pseudobulk or other non-sparse sample-level matrices.
-
 ### 7. Return an actionable decision
 
-Match the user's language and return compact technical prose with this content:
+Return compact technical prose with this content:
 
 ```yaml
 estimand: expression_program | relative_module | active_cells | pathway_activity | tf_activity | sample_enrichment

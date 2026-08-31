@@ -1,13 +1,13 @@
 ---
 name: scanpy-annotate
-description: 'Cell type annotation for single-cell data: from quick manual marker-based mapping to systematic evidence-driven identification with the cluster-identify pipeline. Use this AFTER scanpy-cluster when you have Leiden clusters and marker genes. Triggered by: cell type annotation, 细胞注释, 细胞类型鉴定, 这是什么细胞, annotate clusters, cell identity, cluster annotation, cell phenotyping, 分群注释, 鉴定细胞, cluster-identify, cell type identification, GO enrichment annotation, 注释细胞类型, what cell type is this, identify cell populations. For basic clustering and marker genes without annotation, use scanpy-cluster. For differential expression between conditions, use scanpy-de.'
+description: 'Cell type annotation for single-cell data, including the cluster-identify pipeline. 细胞注释. For basic clustering and marker genes without annotation, use scanpy-cluster. For differential expression between conditions, use scanpy-de.'
 ---
 
 # Scanpy-Annotate: Cell Type Annotation
 
 ## Overview
 
-Systematic cell type annotation from single-cell data. Two tiers: (1) quick manual annotation for well-known cell types, (2) the cluster-identify pipeline for novel or complex populations requiring evidence-driven multi-step validation with GO/KEGG enrichment, pathway scoring, and TF activity analysis.
+Systematic cell type annotation from single-cell data. Three tiers: (1) quick manual annotation for well-known cell types, (2) gene set scoring for custom gene sets, (3) the cluster-identify pipeline for novel or complex populations requiring evidence-driven multi-step validation with GO/KEGG enrichment, pathway scoring, and TF activity analysis.
 
 **Prerequisites**: Run **scanpy-prep** then **scanpy-cluster** first. The AnnData must have Leiden clusters, UMAP coordinates, and marker genes computed.
 
@@ -38,9 +38,19 @@ sc.pl.umap(adata, color='cell_type', legend_loc='on data')
 
 If cell types are unclear or novel, switch to the cluster-identify pipeline below.
 
+## Gene Set Scoring
+
+For scoring cells against a custom gene set (e.g. a T cell signature):
+
+```python
+gene_set = ['CD3D', 'CD3E', 'CD3G']
+sc.tl.score_genes(adata, gene_set, score_name='T_cell_score')
+sc.pl.umap(adata, color='T_cell_score')
+```
+
 ## Cluster-Identify Pipeline
 
-For complex, novel, or ambiguous populations, use the evidence-driven pipeline at `scripts/cluster_identify.py` (943 lines).
+For complex, novel, or ambiguous populations, use the evidence-driven pipeline at `scripts/cluster_identify.py`.
 
 **Two analysis modes**:
 - **Mode A — Cell Type Identification**: DEGs per cluster → biological inference → independent expression validation → annotated h5ad
@@ -60,11 +70,6 @@ Always start by inspecting the h5ad:
 python scripts/cluster_identify.py inspect <h5ad_path>
 ```
 
-This auto-detects:
-- **Organism** (human/mouse) from gene name casing and mitochondrial prefixes
-- **Cluster column** (leiden, louvain, seurat_clusters, etc.)
-- **Data availability** (UMAP, raw counts, number of clusters)
-
 Then ask the user **3 questions**:
 
 **Q1** — Confirm auto-detection:
@@ -80,6 +85,8 @@ If organism is wrong, ask user to specify.
 **Q3** — (Only if B) Target clusters:
 > "Which clusters? Available: {cluster_list}"
 
+Before annotating, try multiple Leiden resolutions — cell types may be apparent at coarser resolutions but lost at finer ones.
+
 ### Step 1: Differential Gene Expression
 
 ```bash
@@ -93,13 +100,13 @@ python scripts/cluster_identify.py deg <h5ad_path> \
   --target-clusters 3,7 --reference-clusters all
 ```
 
-Saves per-cluster DEG tables to `{output_dir}/deg/`. Read the top 20 genes per cluster and form biological inferences.
+Saves per-cluster DEG tables to `{output_dir}/deg/`. For every cluster in the DEG output, write down one biological inference and 3 candidate validation genes.
 
 ### Step 2A: Cell Type Inference and Validation (Mode A)
 
 **Part 1 — Agent Inference:**
 
-Read each cluster's top DEGs and infer cell type using biological knowledge:
+Read each cluster's top DEGs and infer cell type using biological knowledge. For every cluster, write down the inferred cell type and 3 validation genes:
 
 ```
 Cluster 0 top genes: CCR7, LEF1, IL7R, CD4, TCF7
@@ -117,12 +124,7 @@ python scripts/cluster_identify.py validate <h5ad_path> \
   --gene-groups "Cluster0=CD3D,CD4,CCR7" "Cluster1=MS4A1,CD79A" "Cluster2=CD14,LYZ"
 ```
 
-Generates:
-- `validation_plots/dotplot.pdf` — all clusters × all validation genes
-- `validation_plots/feature_umap.pdf` — each gene on UMAP
-- `validation_plots/violin_plots.pdf` — expression distribution per cluster
-
-This validation is **independent** from the DEG analysis — you're checking expression in the original data to confirm your inference. If validation fails, revise and pick different genes.
+This validation is **independent** from the DEG analysis — you're checking expression in the original data to confirm your inference. Validation fails when a validation gene is not expressed in its target cluster in the dotplot/violin; then revise the inference and re-run `validate`.
 
 ### Step 2B: Subpopulation Characterization (Mode B)
 
@@ -149,6 +151,15 @@ python scripts/cluster_identify.py tf <h5ad_path> \
   --cluster-col leiden --organism human --output-dir <output_dir>/tf
 ```
 
+**Gene set sources**:
+
+| Gene Set | Source | Citation |
+|----------|--------|----------|
+| GO terms | gseapy → Enrichr/GO | Gene Ontology Consortium |
+| KEGG pathways | gseapy → KEGG | Kanehisa et al., 2012 |
+| Hallmark pathways | MSigDB via gseapy | Liberzon et al., 2015 |
+| TF regulons | CollecTRI via decoupler | Muller et al., Nat Commun 2023 |
+
 ### Step 3: Compile Results
 
 Create an `annotations.csv` with columns:
@@ -158,9 +169,9 @@ Create an `annotations.csv` with columns:
 - `evidence`: brief evidence chain
 - `representative_genes`: validation genes used
 
-Present the annotation results to the user. **Do NOT automatically write back.**
+Present the annotation results to the user. **Do NOT automatically write back** — never write annotations without user confirmation; always present results first and wait for the user to approve.
 
-### Step 4: Write Back to h5ad (Only When User Confirms)
+### Step 4: Write Back to h5ad
 
 When the user explicitly requests to save:
 
@@ -170,37 +181,4 @@ python scripts/cluster_identify.py write <h5ad_path> \
   --output annotated.h5ad
 ```
 
-Adds to `obs`: `cluster_identity`, `identity_confidence`. Original data is never modified.
-
-## Gene Set Scoring
-
-```python
-# Score cells for custom gene sets
-gene_set = ['CD3D', 'CD3E', 'CD3G']
-sc.tl.score_genes(adata, gene_set, score_name='T_cell_score')
-sc.pl.umap(adata, color='T_cell_score')
-```
-
-## Gene Set Sources
-
-| Gene Set | Source | Citation |
-|----------|--------|----------|
-| GO terms | gseapy → Enrichr/GO | Gene Ontology Consortium |
-| KEGG pathways | gseapy → KEGG | Kanehisa et al., 2012 |
-| Hallmark pathways | MSigDB via gseapy | Liberzon et al., 2015 |
-| TF regulons | CollecTRI via decoupler | Muller et al., Nat Commun 2023 |
-
-## Common Pitfalls
-
-1. **Single-marker annotation**: Annotating cell types based on one gene — use at least 3 markers per cell type
-2. **Skipping validation**: Inferring cell type from DEGs without checking expression in original data — the cluster-identify pipeline enforces independent validation with the `validate` subcommand
-3. **Auto-writing to h5ad**: Never write annotations without user confirmation — always present results first and wait for the user to approve
-4. **Mode confusion**: Mode A (cell type identification) and Mode B (subpopulation characterization) are different questions — don't mix their outputs
-5. **Annotation at wrong resolution**: Cell types may be apparent at coarser resolutions but lost at finer ones — try multiple Leiden resolutions before annotating
-
-## Next Steps
-
-After annotation:
-- **scanpy-de** — differential expression between conditions within annotated cell types
-- **CellChat Analysis** — cell-cell communication between annotated populations
-- **pySCENIC** — TF regulon analysis on annotated subpopulations
+Adds to `obs`: `cluster_identity`, `identity_confidence`.

@@ -25,7 +25,6 @@ Cause:
 
 Solution:
 - Reduce `--num_workers`
-- Start with a single ranking DB
 - Run on a machine with more RAM
 
 ## Issue: Expression values look wrong (floats, negatives)
@@ -37,8 +36,7 @@ Cause:
 - Using normalized/log-transformed/scaled data instead of raw counts
 
 Solution:
-- Use raw counts matrix (integers)
-- In Scanpy, double-check which layer you export (often `adata.raw.X` or a raw-count layer)
+- Use raw counts — see the raw-counts rule in SKILL.md (Overview), including the Scanpy layer guidance.
 
 ## Issue: Many "TF not found" / "Unknown TF" warnings
 
@@ -61,7 +59,6 @@ Cause:
 - Environment / multiprocessing issues on some platforms
 
 Solution:
-- Try fewer workers
 - Consider using the `arboreto_with_multiprocessing.py` entrypoint if available in your install
 
 ## Gene ID Conversion Resources

@@ -6,9 +6,9 @@ A two-phase skill-engineering pass over the Scientist extension's skill pool, ex
 
 **Audit (19 skills).** Each skill reviewed by one DeepSeek subagent (`ollama-cloud/deepseek-v4-pro:0813`, fallback `deepseek-v4-flash:0731`) that first loaded `writing-great-skills/SKILL.md` + `GLOSSARY.md`, then produced a 5-section report (Invocation / Information Hierarchy / Steering / Pruning / Top fixes). Reports: `/tmp/skill-review/reports/*.md`.
 
-**Repair (9 skills, Tier 1+2).** Each skill fixed by one DeepSeek subagent given its audit report, with `read/edit/write/bash` tools, constrained to edit only inside that skill's directory. Subagents printed a `CHANGELOG` + `SELF-CHECK: PASS|FAIL`. Skills backed up to `/tmp/skill-review/backup/skills/` before any edit.
+**Repair (19 skills, Tier 1+2+3).** Each skill fixed by one DeepSeek subagent given its audit report, with `read/edit/write/bash` tools, constrained to edit only inside that skill's directory. Subagents printed a `CHANGELOG` + `SELF-CHECK: PASS|FAIL`. Skills backed up to `/tmp/skill-review/backup/skills/` before any edit. Tier 3 additionally forbade cross-directory file moves (e.g. `report-template.html`, which `core/commands.ts` resolves).
 
-**Verification.** Static frontmatter parse (19/19 valid), `pi --skill <dir>` load smoke test (9/9 reach stop), dead-pointer scan, contradiction check on every correctness bug.
+**Verification.** Static frontmatter parse (19/19 valid), `pi --skill <dir>` load smoke test (19/19 reach stop), dead-pointer scan, contradiction check on every correctness bug.
 
 ## Audit findings — cross-skill pattern frequency
 
@@ -27,7 +27,7 @@ A two-phase skill-engineering pass over the Scientist extension's skill pool, ex
 | sediment | 12 | stale layers never cleared |
 | dead/broken pointer | 6 | SKILL.md points at a file that doesn't exist |
 
-## Repair summary — 9 skills
+## Repair summary — 19 skills
 
 | Skill | SKILL.md lines | Δ | Deleted files | Self-check |
 |---|---|---|---|---|
@@ -40,9 +40,19 @@ A two-phase skill-engineering pass over the Scientist extension's skill pool, ex
 | dnbc4tools | 231→51 | -180 | 3 orphan scripts | PASS |
 | gene-prognosis-scan | 473→376 | -97 | — | PASS |
 | visualization | 31→31 | 0 | — | PASS |
-| **total SKILL.md** | | **-1231** | 8 files | |
+| analysis-planning | 432→175 | -257 | — | PASS |
+| choose-single-cell-gene-set-scoring | 123→106 | -17 | — | PASS |
+| geo-finder | 88→70 | -18 | — | PASS |
+| pyscenic-single-cell-analysis | 94→62 | -32 | — | PASS |
+| scanpy-annotate | 206→184 | -22 | `__pycache__/*.pyc` | PASS |
+| scanpy-cellcommunication | 279→265 | -14 | 2 files renamed | PASS |
+| scientific-brainstorming | 189→145 | -44 | — | PASS (frontmatter quote fixed manually) |
+| statistical-testing | 114→84 | -30 | — | PASS |
+| tmux-runner | 121→114 | -7 | — | PASS |
+| tooluniverse-min | 210→81 | -129 | — | PASS |
+| **total SKILL.md** | | **-1801** | 8 deleted, 5 created, 2 renamed | 19/19 |
 
-New files created by subagents: `scanpy-cluster/references/resolution_selection.md`, `scanpy-prep/scripts/preprocess_full_gene.py`, `squidpy-analysis/references/napari.md`. `publication/` is a previously-untracked skill directory (now with `disable-model-invocation: true`).
+New files created by subagents: `scanpy-cluster/references/resolution_selection.md`, `scanpy-prep/scripts/preprocess_full_gene.py`, `squidpy-analysis/references/napari.md`, `analysis-planning/references/task-document-template.md`, `statistical-testing/quick-reference.md`, `tooluniverse-min/BATCH.md`. Renamed: `scanpy-cellcommunication/references/{workflow-detailed.md,workflow_detailed.md}` → `{cellchat-workflow-detailed.md,liana-workflow-detailed.md}` (branch-distinct, one-character collision cured). `publication/` is a previously-untracked skill directory (now with `disable-model-invocation: true`).
 
 ### Correctness bugs resolved
 
@@ -53,6 +63,10 @@ New files created by subagents: `scanpy-cluster/references/resolution_selection.
 - `publication` — frontmatter now sets `disable-model-invocation: true` (was paying permanent context load for a description that forbade auto-invocation).
 - `dnbc4tools` — `sample_sheet.tsv` rewritten to the 3-column `rna multi` format (was 7-column/pipe-delimited mismatch).
 - `gene-prognosis-scan` — "four phases" → five; Rule 8 threshold `>100`→`>50`.
+- `scanpy-cellcommunication` — `expr_prop` bound single-valued (">0.3" → ">0.2", matching the Key Parameters row); all ~3,300 lines of orphaned disclosed reference wired in via pointers; `workflow_detailed.md`/`workflow-detailed.md` one-character collision cured by branch-distinct rename.
+- `tooluniverse-min` — proxy port 7897→7890 unified (matches the wrapper's actual `http://127.0.0.1:7890`); dead pointers `scripts/setup/…` → `setup/…` fixed in SKILL.md + README; false "no NCBI-dependent tools" description claim removed.
+- `tmux-runner` — the two time thresholds (~1 min vs 2 min) resolved to "~2 minutes is the operative threshold".
+- `scientific-brainstorming` — subagent wrote an unquoted `description: Brainstorming: act…` that broke YAML parsing; quote-wrapped manually afterwards (verified 19/19 frontmatter parse).
 
 ## Per-skill changelogs
 
@@ -143,20 +157,97 @@ New files created by subagents: `scanpy-cluster/references/resolution_selection.
 - r-pipeline/references/scplotter-api.md: deleted LLM-Assisted Visualization, Key Parameters, Built-in Datasets, External Resources — [fix #5] sprawl / relevance
 - r-pipeline/references/ggplot2-patterns.md: fixed dangling pointer → "is below (Key design rules)" — [fix #6] context pointer wording
 
-## Remaining — Tier 3 (not yet repaired)
+## Tier 3 changelogs (all 10 repaired)
 
-10 skills audited but not yet fixed; their reports live in `/tmp/skill-review/reports/`. Typical Tier-3 findings are description synonym-piling and missing leading words, light-touch rewrites:
+### analysis-planning
+- SKILL.md: description front-loads "PLAN stage"; dropped no-op "must read and follow" + identity — [fix #3]
+- SKILL.md: deleted "Final Report (On-Demand, Main Agent Only)" section + its Skill References bullet — [fix #1]
+- SKILL.md: collapsed "no README/report step/99_Report/RFINAL/logs" into one Forbidden-outputs line (step 7); removed 11 restatements — [fix #2]
+- SKILL.md: collapsed completion reminder / report filename / Task-is-plan-only each into its single home — [fix #2]
+- SKILL.md: disclosed the Task Document Structure template to `references/task-document-template.md`, pointed from step 6 — [fix #4]
+- SKILL.md: sharpened step 6 criterion to enumerate required sections — [fix #5]
+- SKILL.md: deleted "Why This Structure" + no-ops; body anchor token switched to "plan" — [fix #3/#6]
+- references/task-document-template.md: created; completion reminder has its single home there — [fix #2/#4]
+- SKIPPED: fix #1 (file move) — `references/report-template.html` stays: `core/commands.ts:14` resolves `/generate-report`'s template at `skills/analysis-planning/references/report-template.html`; moving it would break the command (needs-manual-move if ever relocated).
+- SKIPPED: fix #7 — broken pointer deleted with the Final Report section; nothing left to fix.
 
-`analysis-planning`, `choose-single-cell-gene-set-scoring`, `geo-finder`, `pyscenic-single-cell-analysis`, `scanpy-annotate`, `scanpy-cellcommunication`, `scientific-brainstorming`, `statistical-testing`, `tmux-runner`, `tooluniverse-min`.
+### choose-single-cell-gene-set-scoring
+- SKILL.md: description front-loads **estimand**; 13-name method list → family triggers; verb×noun matrix → "interpreting a score's estimand" — [fix #1/#4/#7]
+- SKILL.md: step 2 replication rule collapsed to gotcha + pointer to validation.md — [fix #5]
+- SKILL.md: step 3 criterion → "report every failing check with the observed evidence" — [fix #6]
+- SKILL.md: step 5 interpretation bullets → pointer to methods.md — [fix #3]
+- SKILL.md: step 6 six defaults deleted (tree is the single source) — [fix #2]
+- references/methods.md: overclaim guards co-located into AddModuleScore/AUCell/singscore rows — [fix #3]
+- NOTE: `agents/openai.yaml` left in place — platform agent config, not a disclosed reference; deleting risks breakage.
 
-Notable Tier-3 correctness bugs still open:
-- `scanpy-cellcommunication` — ~3,300 lines of orphaned disclosed reference; `workflow_detailed.md` vs `workflow-detailed.md` one-character collision.
-- `scientific-brainstorming` — 5 phases with no checkable completion criteria.
+### geo-finder
+- SKILL.md: description front-loads "GEO", one trigger per branch; GEO synonym pile dropped — [fix #1]
+- SKILL.md: Step 1 completion criterion "hold a list of candidate GSE accessions" — [fix #2]
+- SKILL.md: non-standard `compatibility` frontmatter removed; whitelist note single-homed — [fix #3]
+- SKILL.md: Key-parameters column + search-tool map + Example section deleted — [fix #4/#5]
+- SKILL.md: "epigenomics tools" → "assay-specific tools"; Step 0 pre-flight owns the proxy note — [fix #6, §2]
+
+### pyscenic-single-cell-analysis
+- SKILL.md: description → one branch trigger; "Covers Human and Mouse…" identity dropped — [fix #1]
+- SKILL.md: inline CLI/Python workflows → specific pointers to the two templates — [fix #2]
+- SKILL.md: gene-symbol validation gate moved to step 1, before `grn` — [fix #3]
+- SKILL.md: ctx step criterion — "regulons.csv non-empty; if empty stop and run validate_genes.py" — [fix #4]
+- docs/TROUBLESHOOTING.md + python template: duplicates removed; raw-counts rule single-homed in Overview — [fix #5/#6]
+
+### scanpy-annotate
+- SKILL.md: 16-trigger description → 3 (EN/CN + cluster-identify) — [fix #1/#2]
+- SKILL.md: stale `(943 lines)` detail deleted; `__pycache__/*.pyc` removed — [fix #3]
+- SKILL.md: Common Pitfalls merged into their steps (co-location) — [fix #4]
+- SKILL.md: Step 1 criterion — "one inference + 3 validation genes per cluster, every cluster" — [fix #5]
+- SKILL.md: Overview "Two tiers" → "Three tiers" (admits Gene Set Scoring branch) — [fix #6]
+
+### scanpy-cellcommunication
+- SKILL.md: description 17 triggers → 6; "Two approaches" identity dropped — [fix #3]
+- SKILL.md: all orphaned disclosed reference wired in via pointers (liana-workflow-detailed, api_reference, methods_comparison, visualization-guide, troubleshooting, database-reference, examples/, scripts/, assets/) — [fix #1]
+- references/workflow-detailed.md → cellchat-workflow-detailed.md; references/workflow_detailed.md → liana-workflow-detailed.md (collision cured) — [fix #2]; scripts/setup-environment.R stale pointer updated
+- SKILL.md: Step 0 criterion "Q1–Q4 answered"; three method-selection sites merged into one — [fix #4/#5]
+- SKILL.md: `expr_prop` single-valued (>0.2); NMF snippet + Common Visualizations → pointers — [fix #6/#7, §4]
+
+### scientific-brainstorming
+- SKILL.md: description front-loads "Brainstorming" + "thought partner" token — [fix #3]
+- SKILL.md: "When to Use This Skill" deleted (duplicated description) — [fix #2]
+- SKILL.md: Phases 1–5 each got a checkable "Done when" criterion — [fix #1]
+- SKILL.md: Adaptive Techniques → one line per branch; Resources section deleted (single sharpened pointer in Phase 2) — [fix #5/#6]
+- SKILL.md: tone no-ops deleted — [fix #4]
+- Post-fix: frontmatter `description` quote-wrapped manually (subagent wrote unquoted colon-bearing value breaking YAML).
+
+### statistical-testing
+- SKILL.md: description → one trigger per branch, leading word front-loaded — [fix #1]
+- SKILL.md: DESeq2 re-correction rule + effect-size rows merged to single homes — [fix #2/#3]
+- SKILL.md: Quick Reference code blocks → pointer to `quick-reference.md` — [fix #5]
+- quick-reference.md: created (disclosed code reference) — [fix #5]
+
+### tmux-runner
+- SKILL.md: description front-loads `long-running`/`tmux`; content inventory cut — [fix #1]
+- SKILL.md: wrapper contract trimmed to non-obvious facts; `.sh` is the single site — [fix #2/#5]
+- SKILL.md: Verify steps 2–3 → checkable/exhaustive criteria; step 4 merged into step 1 — [fix #3/#4]
+- SKILL.md: time thresholds resolved — "~2 minutes is the operative threshold" — [fix #7]
+
+### tooluniverse-min
+- SKILL.md: description front-loads `tu`/ToolUniverse; false "no NCBI-dependent tools" claim dropped — [fix #1]
+- SKILL.md: 28-category catalog tables deleted (CLI `list`/`find` is live source) — [fix #3]
+- SKILL.md: L1–L9 Production Lessons → pointer to `BATCH.md` keyed on ">100 calls / in-process API" — [fix #2]
+- SKILL.md + README.md: dead pointers `scripts/setup/…` → `setup/…`; proxy port 7897 → 7890 (matches wrapper) — [fix #4, correctness]
+- BATCH.md: created (L1–L3, L5–L9; L4 pipefail block deleted) — [fix #2]
+- setup/install-python-deps.sh: whitelist reads from the wrapper via sed; "95-106 tools" → "~106 tools" — [fix #5, §4]
+
+## Remaining work
+
+All 19 skills repaired (Tier 1+2+3), verified, and committed. Open follow-ups:
+
+- `analysis-planning/references/report-template.html` stays in the skill directory because `core/commands.ts:14` resolves `/generate-report`'s template there. If the skill is ever restructured, that path must move with it (or the skill should own the template only via the command).
+- `choose-single-cell-gene-set-scoring/agents/openai.yaml` — platform agent config, left in place deliberately.
+- Audit reports and pre-repair backup live under `/tmp/skill-review/` and will not survive reboot; the audit method + changelogs are preserved in this document.
 
 ## Artifacts
 
 - Audit reports: `/tmp/skill-review/reports/*.md` (19 files)
-- Per-skill changelogs: `/tmp/skill-review/fixlogs/*.changelog.md` (9 files)
+- Per-skill changelogs: `/tmp/skill-review/fixlogs/*.changelog.md` (19 files)
 - Pre-repair backup: `/tmp/skill-review/backup/skills/`
-- Runner scripts: `run-review.sh`, `run-fix.sh`, `run-fix-tier2.sh`, `fix-scanpy-prep.sh`
+- Runner scripts: `run-review.sh`, `run-fix.sh`, `run-fix-tier2.sh`, `fix-scanpy-prep.sh`, `run-fix-tier3.sh`
 - Subagent prompts: `prompts/reviewer-system.md`, `prompts/fixer-system.md`

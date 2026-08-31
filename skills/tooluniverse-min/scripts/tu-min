@@ -21,8 +21,8 @@ export TOOLUNIVERSE_EXCLUDE_TOOLS="EuropePMC_get_fulltext,Tool_RAG,Tool_Finder"
 # ── Proxy (so Python's urllib inside `tu` inherits it) ───────────────────
 # `tu` uses urllib, which does NOT pick up mihomo's transparent forwarding
 # for all domains (PubMed works, but GDC/cBioPortal SSL-handshake fail without
-# this). The scientist plugin routes ALL API traffic through port 7897.
-# Don't override if the caller already set a proxy.
+# this). The scientist plugin routes ALL API traffic through the proxy
+# set below (mihomo mixed-port). Don't override if the caller already set a proxy.
 if [ -z "$http_proxy" ] && [ -z "$HTTP_PROXY" ]; then
     export http_proxy="http://127.0.0.1:7890"
     export HTTP_PROXY="http://127.0.0.1:7890"

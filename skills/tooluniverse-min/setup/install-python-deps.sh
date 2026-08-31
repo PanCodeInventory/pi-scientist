@@ -74,12 +74,14 @@ info "1/3  tu 基础功能..."
 VER=$("$VENV_PATH/bin/tu" status 2>&1 | grep "version:" | head -1 || echo "失败")
 echo "       $VER"
 
-# 完整白名单（与 scripts/tu-min wrapper 保持一致）—— 必须包含 compact_mode
-# 等基础设施类别，否则 `tu run`/`tu list` 自身会因 execute_tool 缺失而崩溃。
-WL_CATS="compact_mode,tool_finder,special_tools,url,file_download,gdc,cbioportal,cancer_prognosis,survival,timer,pubmed,EuropePMC,semantic_scholar,semantic_scholar_ext,OpenAlex,crossref,pmc,core,dblp,doaj,hal,unpaywall,arxiv,biorxiv,biorxiv_ext,medrxiv,osf_preprints,zenodo"
-WL_EXCL="EuropePMC_get_fulltext,Tool_RAG,Tool_Finder"
+# 白名单/排除列表以 scripts/tu-min wrapper 为唯一来源（避免两处漂移）。
+# 必须包含 compact_mode 等基础设施类别，否则 `tu run`/`tu list` 自身会因
+# execute_tool 缺失而崩溃。
+WRAPPER="$SCRIPT_DIR/../scripts/tu-min"
+WL_CATS="$(sed -n 's/^export TOOLUNIVERSE_CATEGORIES="\(.*\)"$/\1/p' "$WRAPPER")"
+WL_EXCL="$(sed -n 's/^export TOOLUNIVERSE_EXCLUDE_TOOLS="\(.*\)"$/\1/p' "$WRAPPER")"
 
-info "2/3  白名单生效（应显示 ~28 类别 / 95-106 工具）..."
+info "2/3  白名单生效（应显示 ~28 类别 / ~106 工具）..."
 TOOLUNIVERSE_CATEGORIES="$WL_CATS" TOOLUNIVERSE_EXCLUDE_TOOLS="$WL_EXCL" \
 "$VENV_PATH/bin/tu" list --mode categories 2>&1 | grep -iE "categories|tools loaded" | head -3 | sed 's/^/       /'
 
