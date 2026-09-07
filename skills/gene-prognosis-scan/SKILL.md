@@ -16,18 +16,17 @@ The workflow has five phases:
 4. **Phase 2.5** — Immune infiltration & gene co-expression analysis
 5. **Phase 3** — Kaplan-Meier curve generation for dual-validated hits
 
-The analysis uses verified ToolUniverse interfaces — the local `tu` CLI for one-off queries and the in-process `ToolUniverse` API for batch jobs — inside the normal Scientist execution workflow.
+The analysis uses verified ToolUniverse interfaces — the local `tu` CLI for one-off queries and the in-process `ToolUniverse` API for batch jobs.
 
-## Execution Mode: Scientist workflow with optional retrieval
+## Scope and Execution
 
-This skill describes a multi-step analysis, not a Librarian retrieval task. Do not delegate the TCGA/HPA/TIMER2 computation or report generation to `sci_librarian`.
+The main agent normally inspects the gene list and existing outputs, executes the requested analysis, and validates results directly. Answer a focused question or run only the relevant phases when a full pan-cancer scan is not requested; retain identifier checks and validation for every result used.
 
-1. **Classify as NEW or CONTINUE** and use `sci_scout` to inspect the input gene list and relevant existing outputs.
-2. **Resolve scientific choices with the user**, confirm the Shared Scientific Contract and analysis directory, then create a persistent plan that assigns this skill to the relevant worker steps.
-3. **Run the analysis through `sci_implement`** so Worker execution is automatically reviewed.
-4. **Optionally call `sci_librarian` only when the main agent identifies a concrete external-evidence gap**, such as current package documentation, benchmark comparisons, or literature interpretation. The analysis workflow must remain valid when no Librarian lookup is needed.
+Use known constraints without asking again. Clarify unresolved scientific choices that would change the result: species/ortholog policy, cancer scope, survival endpoint, contrasts/cutoffs, covariates, and exploratory versus confirmatory intent. Keep a short checklist for a multi-phase scan; a persistent plan is optional for a long project.
 
-When optional retrieval is useful, give `sci_librarian` a focused retrieval question with the gene symbols, cancer types, phenotype, and desired evidence type.
+Use specialist tools only when helpful: `sci_scout` for focused inspection, `sci_librarian` for a concrete external-evidence gap, `sci_implement` for a bounded execution task (worker only, no automatic review), or `sci_review` for read-only scrutiny. The executor records progress and validation; no specialist call is a prerequisite.
+
+When retrieval is useful, give `sci_librarian` a focused question with the gene symbols, cancer types, phenotype, and desired evidence type. Keep computation and result validation with the executor rather than treating them as literature retrieval.
 
 ## Critical Rules (learned from production failures)
 

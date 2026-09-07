@@ -1,165 +1,68 @@
 # TaskN: [Short Title]
 
-> Created: YYYY-MM-DD | Status: READY | Progress: 0/N steps
-> Analysis parent directory: `/absolute/path/chosen-by-user`
+> Optional template for long or resumable projects. For a few steps, use a short checklist instead. Remove unused fields and sections; placeholders are not analysis defaults.
+> Created: YYYY-MM-DD | Status: READY / RUNNING / BLOCKED / COMPLETE | Progress: 0/N
+> Analysis root: `/absolute/project/path`
 > Plan file: `Task/TaskN-YYYYMMDD.md`
-> Analysis modules: `01_Preprocessing/`, `02_Clustering/`, `03_DEG/`
+> Prior work: [relevant plan/output paths, if any]
 
-## Goal
-One sentence summary of what this task accomplishes.
+## Goal and Scope
 
----
+[Question, endpoint, requested deliverables, and interpretation boundaries. Reuse decisions already given by the user.]
 
-## Module Layout
+## Inputs and Dependencies
 
-| Module | Purpose | Main outputs |
-|--------|---------|--------------|
-| `01_Preprocessing/` | QC and normalization | cleaned h5ad, QC plots/tables |
-| `02_Clustering/` | PCA/neighbors/UMAP/clustering | clustered h5ad, UMAP plots |
-| `03_DEG/` | marker/DEG analysis | DEG tables and plots |
+| Input / existing output | Meaning and checks | Used by |
+|-------------------------|--------------------|---------|
+| `path/to/input.h5ad` | [organism, samples/groups, matrix semantics, QC/provenance] | P01 |
 
----
+## Output Layout
 
-## Todolist
+Analysis modules use `<NN>_ModuleName/` with `scripts/stages/`, `scripts/config/`, `scripts/utils/`, and `results/data/`, `results/tables/`, `results/plots/`. Record the concrete module names and output paths below. Tmux logs/status/manifest belong in `<Module>/tmux/`. No generated analysis artifacts under `Task/`; no module README, analysis `logs/`, `99_Report/`, or `RFINAL`. Preserve original inputs and existing results unless an overwrite is explicitly authorized. These conventions apply even when no Task file is used.
 
-> 每条 Todolist 项与下方 Task Details 中的条目一一对应，编号必须一致。
+## Checklist
 
-- [ ] **P01**: [Title] — 一句话概述
-- [ ] **P02**: [Title] — 一句话概述
-- [ ] **P03**: [Title] — 一句话概述
-- [ ] **PNN**: [Title]
+- [ ] **P01**: [Action and expected result]
+- [ ] **P02**: [Action and expected result]
 
----
+The main agent updates progress after validating worker evidence, with evidence and blockers below. Add or revise steps as needed; independent review is optional and read-only.
 
-## Main-Agent Completion Reminder (Not a Subagent Step)
+## Step Details (Only Where Useful)
 
-When all Todolist items above are marked `[x]`:
-1. Stop dispatching worker/reviewer subagents for this plan.
-2. The **main agent** summarizes completion to the user: what was done, key results, and any caveats.
-3. Tell the user that once the results are confirmed and finalized, they can run `/generate-report`. That command synthesizes the analysis results with the session discussion.
-4. Do not git commit on your own.
+### P01: [Title]
 
----
+- **Input**: [paths and prerequisite outputs]
+- **Method**: [method, key parameters, rationale; relevant skill/reference]
+- **Module**: `<NN>_ModuleName/`
+- **Execution**: [script under `scripts/stages/`, configuration under `scripts/config/`, helpers under `scripts/utils/`; command and environment]
+- **Output**: [concrete paths under the module's `results/data/`, `results/tables/`, and `results/plots/`]
+- **Validation**: [artifact integrity and scientific/statistical checks]
+- **Runtime**: [estimate; tmux/log paths if useful]
+- **Result / blocker**: [actual outcome, evidence, and any unresolved issue]
 
-## Task Details
+[Add matching details for other checklist items only when they need this level of detail.]
 
-### P01: QC and preprocessing
+## Scientific Design and Reproducibility
 
-**Module**: `01_Preprocessing/`
-
-**What to do**: 本步骤的目标。
-
-**Script**: `01_Preprocessing/scripts/stages/01_qc_preprocess.py`
-
-**Config**: `01_Preprocessing/scripts/config/qc_preprocess.yaml`
-
-**Input**:
-- `data/raw/sample.h5ad`
-
-**Output**:
-- `01_Preprocessing/results/data/01_after_qc.h5ad`
-- `01_Preprocessing/results/tables/qc_summary.tsv`
-- `01_Preprocessing/results/plots/qc_metrics.png`
-- `01_Preprocessing/results/plots/qc_metrics.pdf`
-
-**Skill**: `scanpy-prep`
-
-**Long-running**: no
-
-**Estimated time**: <1min
-
-**Method notes**:
-- 使用 `sc.pp.filter_cells`，min_genes=200
-- 过滤线粒体比例 >20% 的细胞
-- 保存 normalized + raw counts
-
----
-
-### P02: Clustering
-
-**Module**: `02_Clustering/`
-
-**What to do**: ...
-
-**Script**: `02_Clustering/scripts/stages/01_clustering.py`
-
-**Config**: `02_Clustering/scripts/config/clustering.yaml`
-
-**Input**:
-- `01_Preprocessing/results/data/01_after_qc.h5ad` (来自 P01)
-
-**Output**:
-- `02_Clustering/results/data/02_clustered.h5ad`
-- `02_Clustering/results/plots/umap_clusters.png`
-- `02_Clustering/results/plots/umap_clusters.pdf`
-- `02_Clustering/results/tables/cluster_summary.tsv`
-
-**Skill**: `scanpy-cluster`
-
-**Long-running**: no
-
-**Estimated time**: 2-5min
-
-**Method notes**:
-- HVG selection: n_top_genes=2000
-- PCA → neighbors → Leiden (resolution=0.5) → UMAP
-- Find marker genes with Wilcoxon test
-
----
-
-### PNN: ...
-
-（每条 Todolist 项必须有对应编号的 Task Details 条目，不可遗漏）
-
----
-
-## Methodology
-
-### Packages and Versions
-| Package | Version | Citation/DOI | Purpose |
-|---------|---------|-------------|---------|
-| scanpy | 1.10.x | Wolf et al., 2018 | scRNA-seq analysis |
-
-### Parameter Justification
-| Parameter | Value | Default | Rationale |
-|-----------|-------|---------|-----------|
-| n_top_genes | 2000 | 1000 | Dataset has 50k cells |
-
-### Assumptions
-- Data has been pre-QC'd by CellRanger
-- Batch effects are minimal
-
-### Alternative Approaches Considered
-- **Alt 1**: Description — why not chosen
-
----
-
-## File Manifest
-
-```text
-Task/
-└── TaskN-YYYYMMDD.md
-01_Preprocessing/
-├── scripts/
-│   ├── config/qc_preprocess.yaml
-│   ├── stages/01_qc_preprocess.py
-│   └── utils/
-└── results/
-    ├── data/01_after_qc.h5ad
-    ├── tables/qc_summary.tsv
-    └── plots/qc_metrics.png / .pdf
-02_Clustering/
-└── ...
-
-# Post-completion deliverable, generated on-demand by the main agent when the user runs /generate-report:
-Report/
-└── TaskN-具体内容-YYYYMMDD.html
-```
+- Experimental unit, biological replicates, groups/contrasts, pairing: [known design]
+- Covariates, batch handling, exclusions, missingness: [decisions and rationale]
+- Matrix/gene-ID semantics and preprocessing: [verified state; preserve counts and gene coverage]
+- Methods, versions, seeds, parameter justification: [actual choices, not assumed versions]
+- Statistical reporting: [effect sizes, uncertainty, multiple-testing correction as applicable]
+- Assumptions, interpretation limits, unresolved consequential choices: [notes]
 
 ## Success Criteria
-- [ ] All scripts run without errors
-- [ ] All expected analysis output files exist under the declared module directories
-- [ ] No generated analysis outputs are written under `Task/`
-- [ ] Results are categorized by file type under `results/data/`, `results/tables/`, and `results/plots/`
-- [ ] Figures are publication quality
-- [ ] Statistical tests are appropriate and correctly reported
+
+- [ ] Required scripts/notebooks actually executed successfully; commands/logs recorded
+- [ ] Expected files exist, are readable, and have correct dimensions, identifiers, and contents
+- [ ] Outputs follow the fixed module layout; original data and prior results protected
+- [ ] Data semantics and sample/group alignment validated
+- [ ] Statistical design, tests, and reporting appropriate to the question
+- [ ] Figures checked visually and conclusions supported by the results
+- [ ] Uncertainty, failed checks, missing evidence, and scope changes disclosed
+
+## Progress and Completion Notes
+
+[Executor records completed steps and checks, outputs, failures, and next useful action. Do not label unexecuted work as complete.]
+
+When finished, summarize results, paths, and caveats to the user. Generate a report only when requested; see [report format guidance](../SKILL.md#completion-and-reports). A report is not a mandatory checklist step. Do not commit without user authorization.

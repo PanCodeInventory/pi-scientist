@@ -9,7 +9,7 @@ description: 'Single-cell differential expression analysis: find genes that diff
 
 Using the wrong method causes pseudoreplication and inflated false discovery rates. Pick the method from the experimental design, then follow that method's reference file for the full workflow.
 
-**Prerequisite**: Run **scanpy-prep** first. The AnnData must be QCed, keep full-gene log-normalized expression in `X`, and keep full-gene integer-valued counts in `layers["counts"]`. `.raw` is not a count source. If comparing conditions, cell types should already be annotated (via scanpy-cluster).
+**Data prerequisite**: Reuse validated preprocessed data; use **scanpy-prep** only for missing or explicitly requested preparation. The AnnData must be QCed, keep full-gene log-normalized expression in `X`, and keep full-gene integer-valued counts in `layers["counts"]`. `.raw` is not a count source. If comparing conditions within cell types, verify existing annotations or obtain them with **scanpy-annotate**. Clarify unresolved contrasts, experimental units, replicates, and covariates before testing; do not re-ask design choices already specified.
 
 ## Method Selection
 

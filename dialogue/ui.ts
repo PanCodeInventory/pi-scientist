@@ -23,29 +23,12 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { formatPlainQuestion, normalizeResolution } from "./contract.js";
-import {
-	CATEGORY_LABELS,
-	type AskUserOption,
-	type AskUserPurpose,
-	type DecisionCategory,
-	type DialogSelection,
-	type ScientificRecommendation,
-} from "./types.js";
+import type { DialogSelection, QuestionParams } from "./types.js";
 
 export async function showScientificDialog(
-	params: {
-		question: string;
-		decisionId: string;
-		category: DecisionCategory;
-		briefing?: string;
-		principles?: string;
-		recommendation: ScientificRecommendation;
-		options?: AskUserOption[];
-		allowCustom?: boolean;
-		multiline?: boolean;
-		placeholder?: string;
-	},
+	params: QuestionParams,
 	ctx: ExtensionContext,
+	signal?: AbortSignal,
 ): Promise<DialogSelection | null> {
 	const options = params.options ?? [];
 	const allowCustom = options.length === 0 || params.allowCustom !== false;
@@ -59,7 +42,17 @@ export async function showScientificDialog(
 		/* ignore */
 	}
 
-	return await ctx.ui.custom<DialogSelection | null>((tui, theme, keybindings, done) => {
+	return await ctx.ui.custom<DialogSelection | null>((tui, theme, keybindings, close) => {
+		let settled = false;
+		const done = (value: DialogSelection | null) => {
+			if (settled) return;
+			settled = true;
+			signal?.removeEventListener("abort", abort);
+			close(value);
+		};
+		const abort = () => done(null);
+		if (signal?.aborted) queueMicrotask(abort);
+		else signal?.addEventListener("abort", abort, { once: true });
 		let editMode = options.length === 0;
 		let contextScrollTop = 0;
 		let contextPageSize = 1;
@@ -72,7 +65,7 @@ export async function showScientificDialog(
 
 		const customItemValue = "__scientist_custom_answer__";
 		const selectItems: SelectItem[] = options.map((option, index) => {
-			const recommended = option.recommended || (option.value ?? option.label) === params.recommendation.value;
+			const recommended = option.recommended || (option.value ?? option.label) === params.recommendation?.value;
 			return {
 				value: `option:${index}`,
 				label: `${index + 1}. ${option.label}${recommended ? " [推荐]" : ""}`,
@@ -128,7 +121,6 @@ export async function showScientificDialog(
 				value: trimmed,
 				wasCustom: true,
 				resolution: "user_choice",
-				confirmsContract: false,
 			});
 		}
 		editor.onSubmit = submitCustom;
@@ -149,7 +141,6 @@ export async function showScientificDialog(
 				wasCustom: false,
 				index: index + 1,
 				resolution: normalizeResolution(option, params.recommendation),
-				confirmsContract: option.confirmsContract === true,
 			});
 		}
 
@@ -251,11 +242,13 @@ export async function showScientificDialog(
 			// Scrollable context: the recommended answer comes first so it is visible
 			// without scrolling; principles and briefing follow as supporting depth.
 			const contextLines: string[] = [];
-			addWrapped(contextLines, theme.fg("success", theme.bold("推荐")), " ");
-			addWrapped(contextLines, theme.fg("text", params.recommendation.label ?? params.recommendation.value), "   ");
-			addWrapped(contextLines, theme.fg("muted", params.recommendation.rationale), "   ");
-			if (params.recommendation.conditions) {
-				addWrapped(contextLines, theme.fg("dim", `适用条件：${params.recommendation.conditions}`), "   ");
+			if (params.recommendation) {
+				addWrapped(contextLines, theme.fg("success", theme.bold("推荐")), " ");
+				addWrapped(contextLines, theme.fg("text", params.recommendation.label ?? params.recommendation.value), "   ");
+				addWrapped(contextLines, theme.fg("muted", params.recommendation.rationale), "   ");
+				if (params.recommendation.conditions) {
+					addWrapped(contextLines, theme.fg("dim", `适用条件：${params.recommendation.conditions}`), "   ");
+				}
 			}
 
 			if (params.principles?.trim()) {
@@ -308,7 +301,7 @@ export async function showScientificDialog(
 			}
 
 			const lines = [
-				rule(`需要你的决策 · ${CATEGORY_LABELS[params.category]}`, (text) => theme.fg("accent", theme.bold(text))),
+				rule("需要你的决定", (text) => theme.fg("accent", theme.bold(text))),
 				...headerLines,
 				...visibleContext,
 				...actionLines,
@@ -341,6 +334,7 @@ export async function showScientificDialog(
 				selectList?.invalidate();
 			},
 			handleInput,
+			dispose: () => signal?.removeEventListener("abort", abort),
 		};
 	}, {
 		overlay: true,
@@ -356,30 +350,20 @@ export async function showScientificDialog(
 }
 
 export async function showFallbackDialog(
-	params: {
-		question: string;
-		purpose: AskUserPurpose;
-		briefing?: string;
-		principles?: string;
-		recommendation?: ScientificRecommendation;
-		options?: AskUserOption[];
-		allowCustom?: boolean;
-		multiline?: boolean;
-		placeholder?: string;
-	},
+	params: QuestionParams,
 	ctx: ExtensionContext,
+	signal?: AbortSignal,
 ): Promise<DialogSelection | null> {
 	const options = params.options ?? [];
 	const allowCustom = options.length === 0 || params.allowCustom !== false;
-	const title = params.purpose === "administrative"
-		? params.question
-		: formatPlainQuestion(params);
+	const title = formatPlainQuestion(params);
 
 	async function askFreeText(shortTitle = false): Promise<string | undefined> {
+		signal?.throwIfAborted();
 		const prompt = shortTitle ? params.question : title;
 		return params.multiline
 			? await ctx.ui.editor(prompt, params.placeholder ?? "")
-			: await ctx.ui.input(prompt, params.placeholder ?? "");
+			: await ctx.ui.input(prompt, params.placeholder ?? "", { signal });
 	}
 
 	if (options.length === 0) {
@@ -392,7 +376,6 @@ export async function showFallbackDialog(
 					value: typed.trim(),
 					wasCustom: true,
 					resolution: "user_choice",
-					confirmsContract: false,
 				};
 			}
 			ctx.ui.notify("答案不能为空", "warning");
@@ -406,7 +389,7 @@ export async function showFallbackDialog(
 	});
 	const customLabel = "自定义答案...";
 	const choices = allowCustom ? [...labels, customLabel] : labels;
-	const choice = await ctx.ui.select(title, choices);
+	const choice = await ctx.ui.select(title, choices, { signal });
 	if (!choice) return null;
 	const index = choices.indexOf(choice);
 	if (index >= 0 && index < options.length) {
@@ -417,7 +400,6 @@ export async function showFallbackDialog(
 			wasCustom: false,
 			index: index + 1,
 			resolution: normalizeResolution(option, params.recommendation),
-			confirmsContract: option.confirmsContract === true,
 		};
 	}
 
@@ -430,7 +412,6 @@ export async function showFallbackDialog(
 				value: typed.trim(),
 				wasCustom: true,
 				resolution: "user_choice",
-				confirmsContract: false,
 			};
 		}
 		ctx.ui.notify("答案不能为空", "warning");

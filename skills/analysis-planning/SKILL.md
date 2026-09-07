@@ -1,175 +1,94 @@
 ---
 name: analysis-planning
-description: Use when the main Scientist agent reaches the PLAN stage and must write a Task/TaskN-YYYYMMDD.md plan or call sci_implement. Handles NEW and CONTINUE modes.
+description: Optional planning for multi-step bioinformatics work and long-running projects. Use for a short execution checklist, dependencies, validation criteria, or a persistent Task document when useful; simple tasks and ordinary questions need no plan.
 ---
 
 # Bioinformatics Analysis Planning
 
-Use this skill as the **main Scientist agent** to turn mandatory Scout findings, any relevant evidence optionally retrieved with `sci_librarian`, the confirmed Shared Scientific Contract, and the user-confirmed analysis directory into a persistent Markdown plan. `sci_librarian` is not a prerequisite for planning; include its evidence only when the main agent chose to retrieve it for a concrete evidence gap.
+Plan only as much as the work needs. The main agent coordinates the analysis, delegates substantial execution to workers, and accepts results after checking evidence. Workers self-check; independent review is selected by the main agent when warranted. Answer ordinary questions directly; do not turn them into an analysis workflow.
 
-## Shared Scientific Contract
+## Choose the Smallest Useful Plan
 
-The current session should contain the explicitly confirmed, auto-generated Shared Scientific Contract. Treat it as the authoritative scientific intent. Carry these decisions into the Goal, Methodology, parameter justification, assumptions, and Task Details:
+- **Simple task**: act directly and report the result and checks. No plan file.
+- **Several steps**: keep a short checklist in the conversation, with inputs, intended outputs, and key checks.
+- **Long project, complex dependencies, or resumable work**: use a persistent `Task/TaskN-YYYYMMDD.md` when useful or requested. Adapt the [optional template](references/task-document-template.md); omit irrelevant sections.
 
-- biological question/hypothesis and primary endpoint,
-- experimental unit, groups/contrasts, and replication,
-- covariates, batch handling, exclusions, and assumptions,
-- selected method family and the evidence/rationale for it,
-- requested outputs, evidential standard, and interpretation boundaries,
-- any technical choices the user explicitly delegated to the agent.
+A plan is a working aid, not an authorization mechanism. There is no required request classification, shared-contract confirmation, or specialist-tool preflight. Explicit user authorization and project conventions still apply whether or not a Task exists.
 
-Do not silently replace an agreed decision. If the contract is missing a consequential scientific choice, internally inconsistent, or incompatible with the scouted data, STOP and report the exact unresolved issue instead of guessing or writing a plan.
+## Scientific Decisions Before Affected Computation
 
-## Two Planning Modes
+Read the request, available metadata, and relevant existing outputs first. Reuse explicit constraints; do not ask the user to repeat them. Clarify unresolved choices that materially change the science, such as:
 
-You operate in one of two modes:
+- biological question, primary endpoint, groups and contrasts;
+- experimental unit, biological replication, paired/repeated measurements;
+- covariates, batch handling, exclusions and confounding;
+- method family, evidential standard, and exploratory versus confirmatory interpretation;
+- scope, requested deliverables, or output location when genuinely ambiguous.
 
-### NEW Mode (新分析)
-Brand new analysis from raw data. You design the full pipeline from scratch.
-- Determine all module directories and their sequence.
-- No prior modules to reference.
-- Example: user says "analyze this scRNA-seq data" with no prior context.
+Ask only what is needed, with no question quota. Continue independent inspection while a consequential choice is unresolved; do not silently choose that contrast or hypothesis. Document delegated technical choices, justified defaults, assumptions, and limitations without requiring a separate approval ceremony.
 
-### CONTINUE Mode (延续分析)
-Building on a JUST-COMPLETED analysis. You add new modules to an existing project.
-- The task context will tell you: the PRIOR plan file, completed modules, and which data files to reuse.
-- The NEW module directory gets the next available NN_ prefix.
-- You MUST reference existing module outputs as inputs for the new steps.
-- You create a NEW plan file (not overwriting the prior one).
-- Example: user says "run DE on these clusters" after completing clustering + annotation.
+Validate data semantics before selecting methods: organism and gene IDs, matrix orientation, counts versus normalized values, sample alignment, missingness, and existing preprocessing. Preserve the relevant skill's data-storage requirements. Match statistical tests to the experimental unit, account for replication and multiple testing, and report effect sizes and uncertainty where applicable.
 
-**Key CONTINUE rule**: Never plan to re-run completed steps. Reuse existing outputs.
-If the user wants to re-run with different parameters, treat it as a NEW analysis
-but reference the existing raw/preprocessed data.
+## Reuse and File Organization
 
-## Directory Model
+Inspect existing outputs and provenance before recomputing. Reuse valid artifacts; rerun only what is missing, invalidated, or explicitly requested with changed parameters. Protect original data, record affected dependencies, and do not overwrite prior results without explicit authorization.
 
-There are three different directory concepts. Do NOT mix them up:
-
-1. **Plan directory** — `<analysis_parent_dir>/Task/`
-   - Stores only persistent Task/Plan markdown files.
-   - Example: `Task/Task3-20260528.md`
-
-2. **Analysis module directories** — `<analysis_parent_dir>/<NN>_ModuleName/`
-   - Store concrete analysis files: scripts, config, data outputs, tables, and plots.
-   - These are siblings of `Task/`, not children of `Task/`.
-   - Example: `01_Preprocessing/`, `02_Clustering/`, `03_DEG/`.
-
-3. **Final report directory** — `<analysis_parent_dir>/Report/`
-   - Created on-demand by the **main agent** when the user runs `/generate-report`, after all Todolist items pass review and the results are confirmed.
-   - Stores only the final report.
-   - Report filename pattern: `Report/<TaskID>-<具体内容>-<YYYYMMDD>.html`.
-     - `<TaskID>` MUST match the Task file's Task number prefix, e.g. `Task/Task3-20260528.md` → `Task3`.
-     - `<具体内容>` is a short filename-safe summary of the report content, e.g. `单细胞聚类注释分析`.
-     - `<YYYYMMDD>` is the report creation date.
-     - Example: `Report/Task3-单细胞聚类注释分析-20260528.html`.
-   - It is not an analysis module and must never appear as a worker/reviewer step.
-
-Generated analysis outputs MUST NOT be written under `Task/`. The `Task/` folder is for plan files only.
-
-## Critical Rule: Write a File
-
-You MUST create a plan file. This is NOT optional.
-
-1. Identify the user-confirmed **analysis parent directory** from the task context and record it in the plan file. If the task context does not explicitly provide it, STOP and ask for it; do not create a plan.
-2. Check if `<analysis_parent_dir>/Task/` exists; if not, create it.
-3. Determine the task number:
-   - List existing `Task*-*.md` files in `Task/`
-   - Find the highest task number (e.g., `Task3-20260526.md` → N=3)
-   - Use N+1 for the new task (e.g., `Task4-20260528.md`)
-   - If no tasks exist, start at `Task1-YYYYMMDD.md`
-4. Date format: YYYYMMDD (no hyphens), use today's date.
-5. Define one or more analysis module directories using the pattern `<NN>_ModuleName/`.
-6. Write the plan to `Task/TaskN-YYYYMMDD.md`, following the template at `references/task-document-template.md`. The file must contain the header block, Goal, Module Layout, Todolist, Main-Agent Completion Reminder, Task Details (one `### PNN:` per Todolist item), Methodology, File Manifest, and Success Criteria sections.
-7. Forbidden outputs — do not create any of these, and do not add them as Todolist steps: `99_Report/`, `RFINAL`, `README.md` (module-level or otherwise), report-generation steps, or `logs/` directories (the analysis root `logs/` is runner-only; tmux run logs live under `<Module>/tmux/`).
-8. After writing, confirm the plan file path and analysis module directories, and retain the completion reminder (see the Main-Agent Completion Reminder section in the template).
-
-## Required Analysis Module Structure
-
-Every analysis module directory MUST follow this framework:
+The following deliverable layout is required for analysis modules, even without a Task file. Honor explicit project-specific conventions; do not reorganize existing data merely to fit this template:
 
 ```text
-<NN>_ModuleName/
-  scripts/
-    config/        # YAML configuration files
-    stages/        # Sequential analysis scripts (01_, 02_, ...)
-    utils/         # Shared utility modules for this module
-  results/
-    data/          # h5ad or other binary/intermediate data files
-    tables/        # TSV/CSV tables and summary tables
-    plots/         # PNG/PDF figures
+<analysis_parent_dir>/
+  Task/                         # optional plan Markdown only
+  <NN>_ModuleName/
+    scripts/config/             # YAML configuration
+    scripts/stages/             # sequential reproducible scripts (01_, 02_, ...)
+    scripts/utils/              # shared helpers and copied tmux wrapper
+    results/data/               # h5ad and other data
+    results/tables/              # TSV/CSV
+    results/plots/               # PNG/PDF
+    tmux/                       # run logs, status, manifest when tmux is used
+  Report/                       # requested final reports
 ```
 
-Results are categorized by file type under `results/`. If per-celltype separation is needed, create subfolders within the file-type folders, e.g. `results/tables/T_cell/` or `results/plots/T_cell/`, but never make cell type the first level under `results/`.
+`Task/` stores plan Markdown only; generated analysis artifacts MUST stay outside it. New modules use the next available `<NN>_ModuleName/` prefix and the fixed `scripts/` and `results/` structure above. Per-cell-type subfolders belong inside `results/data/`, `results/tables/`, or `results/plots/`, not directly under `results/`.
 
-## Skill References
+Do not create module README files, `99_Report/`, `RFINAL`, or analysis `logs/` directories. The analysis root `logs/` is runner-only; do not create or repurpose it. Tmux logs, status files, and run history belong under `<Module>/tmux/`, with the wrapper under `<Module>/scripts/utils/`. Ordinary questions need no filesystem scaffolding.
 
-When a step should follow a specific skill, include `**Skill**: [name]`.
-The worker will have access to the skill's SKILL.md content.
+When creating a Task file, record the analysis root, goal, inputs/dependencies, checklist, outputs, and success criteria. Use the next unused Task number and today's date; retain prior plans when starting a distinct project increment. Add step details, method rationale, versions, and parameter choices only at the level needed to reproduce the work. Refer to relevant skills by name or valid path.
 
-Common assignments:
-- QC and preprocessing → `scanpy-prep`
-- Clustering and annotation → `scanpy-cluster`
-- Cell type annotation → `scanpy-annotate`
-- Differential expression → `scanpy-de`
-- Statistical testing → `statistical-testing`
-- Figure creation → `visualization`
-- Cell communication → `scanpy-cellcommunication`
-- Transcription factor analysis → `pyscenic-single-cell-analysis`
-- Spatial analysis → `squidpy-analysis` or `spatial-commot`
+## Execute, Validate, Update
 
-## Long-running Steps and Tmux
+The main agent as coordinating executor updates checklist progress and records output paths, actual checks, failures, and blockers. Workers return evidence through sci_handoff; they do not edit the shared plan in team assignments. Mark a step complete after its required outputs and scientific checks pass, not merely because a command exited. Update the plan when findings require a change; clarify changes to consequential scientific choices with the user.
 
-When a step involves a long-running analysis, you MUST include these fields in the Task Details:
+Use [tmux-runner](../tmux-runner/SKILL.md) for long-running jobs when appropriate, even without a plan. Record commands, environment, logs, exit status, and expected artifacts. Estimated runtime and `**Long-running**: yes` are useful optional step fields.
 
-- `**Long-running**: yes` or `no` — indicates whether the worker should use tmux
-- `**Estimated time**: <duration>` — e.g., `10-30min`, `1-2h`, `30min-1h`
+## Team Execution
 
-Mark a step as `**Long-running**: yes` when:
-- The analysis involves large datasets (>10k cells, >5k genes)
-- The script runs SCENIC, cell communication, trajectory analysis, or multi-sample processing
-- The script calls external tools (CellRanger, STAR, HISAT2, etc.)
-- You estimate the step will take more than ~5 minutes
+Use sci_dispatch for substantial analysis execution. Include established cwd, role,
+inputs, confirmed decisions, writeScopes, acceptance criteria and dependencies.
+Queue dependent tasks with start=false; launch through sci_tasks start only after
+the main agent accepts their upstream tasks. A dispatch result is a task ID, not
+completed analysis. Keep machine state in .scientist/ and analysis outputs in modules.
 
-The worker will use tmux to run these scripts, ensuring they survive agent timeouts and allowing real-time monitoring via log files.
+Workers self-check and report submitted, waiting_compute, blocked or failed through
+sci_handoff. The main agent inspects evidence and uses sci_tasks accept to release
+downstream work. For corrections or completed calculations, use sci_tasks resume
+with concrete instructions; inspect registered jobs before recomputing. Previous
+attempts and native sessions remain available for provenance.
 
-## CONTINUE Mode Plan (Incremental)
+Scout and librarian are on-demand roles. Reviewer is optional and selected for
+complex designs, anomalies, central claims or the user's request; it may review
+before or after execution. There is no automatic worker-to-reviewer chain.
 
-When creating a CONTINUE plan, your plan MUST additionally include:
+Herdr manages expert sessions; tmux-runner manages long analysis jobs. A tmux expert
+backend is available outside Herdr. The coordinator receives change notifications
+while its Pi session is active; when restarting, inspect sci_tasks before dispatching.
+See [team architecture](../../docs/team-architecture.md) for recovery boundaries.
+The old sci_implement/sci_review/sci_scout/sci_librarian tools remain one-shot helpers.
 
-- `> Prior plan: Task/TaskN-YYYYMMDD.md` in the header
-- `> Prior modules: 01_Preprocessing/, 02_Clustering/, 03_Annotation/` listing completed modules
-- A **Dependencies** section after the Module Layout table:
+## Completion and Reports
 
-```markdown
-## Dependencies on Prior Analysis
+Summarize what actually ran, key results, output paths, validation evidence, and remaining limitations. Distinguish completed, blocked, and unexecuted work. Do not commit without user authorization.
 
-| New Module | Depends on | File reused |
-|------------|-----------|-------------|
-| `04_DiffExpression/` | `02_Clustering/`, `03_Annotation/` | `03_Annotation/results/data/adata_annotated.h5ad` |
-```
+A report is optional and can be requested with `/generate-report`; neither a Task file nor specialist review is a prerequisite. For a comprehensive report, use Chinese HTML under `Report/`, covering the question/design, inputs and QC, methods/parameters, findings with figures and statistics, limitations, and a reproducibility/file index.
 
-This ensures the worker knows exactly which existing files to load instead of re-running prior steps.
-
-## How Worker and Reviewer Use the Plan
-
-- **Worker**: read the plan, find the first unchecked `- [ ]` in the Todolist, jump to the matching `### PNN:` in Task Details, execute following the `**Module**`/`**Script**`/`**Config**`/`**Input**`/`**Output**` fields, write all generated files under the declared module directory, and report results via handoff JSON. Do not update checkboxes; the reviewer handles plan updates.
-- **Reviewer**: check that generated outputs are inside declared `<NN>_ModuleName/` directories and not inside `Task/`, and that no forbidden outputs (step 7) were created. If issues are found, update this same plan file: add fix steps at the end of the Todolist (continuing the numbering) with matching `### PNN:` Task Details subsections, or amend an existing entry's Method notes.
-
-## After Writing the Plan
-
-After writing the file, output:
-
-```text
-📋 Task file saved to: Task/TaskN-YYYYMMDD.md
-📁 Analysis modules:
-- 01_ModuleName/
-- 02_ModuleName/
-
-Summary: [1-2 sentence summary]
-
-Total analysis steps: N
-Estimated complexity: [Low/Medium/High]
-
-Next action: Call sci_implement with planFile="Task/TaskN-YYYYMMDD.md" and cwd="/absolute/analysis_parent_dir" until all Todolist items are [x]. Then the main agent summarizes completion; the user runs `/generate-report` when ready.
-```
+Required filename: `Report/<ID>-<具体内容>-<YYYYMMDD>.html`. When a Task exists, `<ID>` MUST match its Task number (e.g. `Task3-单细胞聚类注释分析-20260528.html`); otherwise use a stable topic ID in the same filename format. Do not invent a Task just to name a report. Report actual execution and validation, and flag missing evidence rather than presenting it as confirmed.

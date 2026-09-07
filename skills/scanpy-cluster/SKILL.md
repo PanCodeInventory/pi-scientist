@@ -11,12 +11,12 @@ The downstream graph-analysis phase. It takes a full-gene AnnData with HVG-deriv
 
 ## Prerequisite
 
-Run **scanpy-prep** first. The input AnnData should follow the full-gene contract:
+Reuse a compatible preprocessed AnnData; use **scanpy-prep** to supply missing preprocessing, not as a mandatory skill invocation. The input must follow the full-gene contract:
 - QC filters applied
 - `adata.X`: full-gene normalized (`normalize_total` + `log1p`) expression
 - `adata.layers["counts"]`: full-gene integer-valued counts
 - `adata.var["highly_variable"]`: HVG mask without physical gene subsetting
-- `adata.obsm["X_pca"]`: PCA produced by scanpy-prep
+- `adata.obsm["X_pca"]`: validated upstream PCA from the HVG mask, with preprocessing provenance
 
 Fail early rather than silently recomputing PCA:
 
@@ -131,7 +131,7 @@ For comprehensive plotting guidance, read `references/plotting_guide.md`.
 | `n_neighbors` | 10-30 | Lower for small datasets, higher for large |
 | `resolution` | 0.3-1.2 | Start at 0.5; higher = more clusters |
 
-For PCA/neighbor heuristics, consult `scanpy-prep/references/parameter_selection.md`; for clustering resolution, read `references/resolution_selection.md`.
+For PCA/neighbor heuristics, consult [parameter_selection.md](../scanpy-prep/references/parameter_selection.md); for clustering resolution, read `references/resolution_selection.md`.
 
 ## Common Pitfalls
 

@@ -1,54 +1,38 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
+import { truncateHead } from "@earendil-works/pi-coding-agent";
 import type { AgentRunResult, AgentRenderItem } from "../core/runner.js";
 
 export function extractOutput(result: AgentRunResult): string {
 	if (result.exitCode !== 0) {
 		return `${result.agent} failed: ${result.errorMessage || result.stderr || "(no output)"}`;
 	}
-	return result.messages
-		.filter((message) => message.role === "assistant")
-		.map((message) => message.content.filter((content) => content.type === "text").map((content) => content.text).join(""))
-		.join("\n");
+	const last = result.messages.filter((message) => message.role === "assistant").at(-1);
+	return last?.content.filter((content) => content.type === "text").map((content) => content.text).join("\n") ?? "";
 }
 
-/** Extract and validate the last JSON code block from worker output. */
-export function extractHandoffJson(output: string): string | null {
-	const matches = output.match(/```json\s*\n([\s\S]*?)\n```/g);
-	if (!matches?.length) return null;
-
-	const json = matches[matches.length - 1]
-		.replace(/^```json\s*\n/, "")
-		.replace(/\n```$/, "")
-		.trim();
-	try {
-		const parsed = JSON.parse(json);
-		return parsed.stepId && parsed.planFile ? json : null;
-	} catch {
-		return null;
+/** Pi marks thrown tool errors as failures; returning isError alone is insufficient. */
+export function agentToolResult(result: AgentRunResult) {
+	const response = extractOutput(result);
+	const output = [result.errorMessage && !response.includes(result.errorMessage) ? result.errorMessage : "", response]
+		.filter(Boolean).join("\n") || "(no output)";
+	let text = truncateHead(output).content;
+	if (text !== output) {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scientist-output-"));
+		const file = path.join(dir, "output.txt");
+		fs.writeFileSync(file, output, { mode: 0o600 });
+		text += `\n\n[Output truncated. Full output: ${file}]`;
 	}
-}
-
-export function hasUncheckedTodolistItems(planPath: string): boolean | null {
-	let content: string;
-	try {
-		content = fs.readFileSync(planPath, "utf-8");
-	} catch {
-		return null;
+	if (result.exitCode !== 0 || ["error", "aborted", "length", "toolUse"].includes(result.stopReason ?? "") ||
+		/^(?:#{1,6}\s*)?(?:ANALYSIS TERMINATED|BLOCKED)\b/m.test(output)) {
+		throw new Error(`${result.agent} did not complete successfully (${result.stopReason ?? result.exitCode}): ${text}`);
 	}
-
-	let inTodolist = false;
-	let sawTodolist = false;
-	for (const line of content.split(/\r?\n/)) {
-		if (/^##\s+Todolist\b/.test(line)) {
-			inTodolist = true;
-			sawTodolist = true;
-			continue;
-		}
-		if (inTodolist && /^##\s+/.test(line)) break;
-		if (inTodolist && /^-\s+\[ \]\s+(?:\*\*[^*]+\*\*|[A-Za-z][\w-]*)\s*:/.test(line)) return true;
-	}
-	return sawTodolist ? false : null;
+	return {
+		content: [{ type: "text" as const, text }],
+		details: makeDetails(result, text),
+		usage: result.modelUsage,
+	};
 }
 
 export function makeDetails(result: AgentRunResult, output: string): AgentRenderItem {
@@ -66,15 +50,10 @@ export function makeDetails(result: AgentRunResult, output: string): AgentRender
 	};
 }
 
-/** Minimal details for early-return paths where no agent run happened. */
+/** Rendering details for log-tool failures that do not start an agent. */
 export function stubDetails(agent: string, task: string): AgentRenderItem {
 	return {
-		agent,
-		agentSource: "unknown",
-		task,
-		exitCode: 1,
-		output: "",
-		stderr: "",
+		agent, agentSource: "unknown", task, exitCode: 1, output: "", stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 	};
 }

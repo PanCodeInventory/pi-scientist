@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { injectScientistConventions } from "./conventions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,7 +119,7 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 			description: frontmatter.description,
 			tools: tools && tools.length > 0 ? tools : undefined,
 			model: resolveAgentModel(frontmatter.name, frontmatter.model),
-			systemPrompt: body,
+			systemPrompt: injectScientistConventions(body),
 			source: "user",
 			filePath,
 		});

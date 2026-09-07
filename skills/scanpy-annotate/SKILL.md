@@ -9,7 +9,7 @@ description: 'Cell type annotation for single-cell data, including the cluster-i
 
 Systematic cell type annotation from single-cell data. Three tiers: (1) quick manual annotation for well-known cell types, (2) gene set scoring for custom gene sets, (3) the cluster-identify pipeline for novel or complex populations requiring evidence-driven multi-step validation with GO/KEGG enrichment, pathway scoring, and TF activity analysis.
 
-**Prerequisites**: Run **scanpy-prep** then **scanpy-cluster** first. The AnnData must have Leiden clusters, UMAP coordinates, and marker genes computed.
+**Data prerequisites**: The AnnData must have validated preprocessing, Leiden clusters, UMAP coordinates, and marker genes for the requested annotation workflow. Reuse compatible existing outputs; use **scanpy-prep** or **scanpy-cluster** only to supply missing prerequisites, not to repeat completed analysis.
 
 ## Quick Manual Annotation
 
@@ -62,30 +62,19 @@ For complex, novel, or ambiguous populations, use the evidence-driven pipeline a
 pip install scanpy anndata gseapy decoupler
 ```
 
-### Step 0: Inspect Data and Ask User
+### Step 0: Inspect Data and Resolve Scientific Scope
 
-Always start by inspecting the h5ad:
+Inspect the h5ad directly, for example:
 
 ```bash
 python scripts/cluster_identify.py inspect <h5ad_path>
 ```
 
-Then ask the user **3 questions**:
+Use the request, existing metadata, and prior confirmations to identify the organism, cluster column, tissue context, and intended scope. The A/B branches below are analysis choices, not required conversation modes.
 
-**Q1** — Confirm auto-detection:
-> "Detected {n} clusters (column: '{col}'), organism: {org}. Correct?"
+Clarify only unresolved choices that affect interpretation: identifying all cell types versus characterizing selected subpopulations, target/reference clusters, or uncertain species/tissue metadata. Show available cluster IDs when asking about targets. Do not require confirmation of reliable metadata or re-ask an already answered question.
 
-If organism is wrong, ask user to specify.
-
-**Q2** — Analysis type:
-> "What analysis?"
-> - A) Identify cell types for all clusters
-> - B) Deep characterization of specific subpopulations
-
-**Q3** — (Only if B) Target clusters:
-> "Which clusters? Available: {cluster_list}"
-
-Before annotating, try multiple Leiden resolutions — cell types may be apparent at coarser resolutions but lost at finer ones.
+Check existing resolution comparisons for stability and marker coherence; compare additional Leiden resolutions if granularity remains uncertain. Preserve the selected clustering and prior results rather than silently replacing them.
 
 ### Step 1: Differential Gene Expression
 
@@ -169,7 +158,7 @@ Create an `annotations.csv` with columns:
 - `evidence`: brief evidence chain
 - `representative_genes`: validation genes used
 
-Present the annotation results to the user. **Do NOT automatically write back** — never write annotations without user confirmation; always present results first and wait for the user to approve.
+Present the annotation results and evidence to the user before writing annotations back. **Explicit approval of the annotation mapping is required**; if this mapping is already approved and saving is requested, do not ask again. New or materially revised identities require confirmation. Keep uncertain populations flagged rather than inventing confident labels.
 
 ### Step 4: Write Back to h5ad
 
@@ -181,4 +170,4 @@ python scripts/cluster_identify.py write <h5ad_path> \
   --output annotated.h5ad
 ```
 
-Adds to `obs`: `cluster_identity`, `identity_confidence`.
+Adds to `obs`: `cluster_identity`, `identity_confidence`. Save to a separate output h5ad; do not overwrite the original input without explicit authorization. Verify the saved annotations, cell alignment, and preserved expression data.

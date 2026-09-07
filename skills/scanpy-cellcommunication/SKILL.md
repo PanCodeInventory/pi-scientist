@@ -19,7 +19,7 @@ Infer ligand-receptor interactions between cell types from scRNA-seq data. Two c
 
 LIANA+ consensus scores are more robust than any single method; if using CellChat alone, validate key findings with an orthogonal approach.
 
-Both require annotated cell types — run **scanpy-annotate** first.
+Both require validated cell-type annotations. Reuse existing annotations; use **scanpy-annotate** when they are missing or need revision.
 
 ## Method Selection
 
@@ -42,45 +42,25 @@ One decision, made here: CellChat (R) for pathway-level insight, LIANA+ (Python)
 
 **LIANA+** — quick discovery in the Python ecosystem, method comparison/validation, spatial transcriptomics, consensus across CellPhoneDB + CellChat + NATMI + other methods simultaneously.
 
-## Step 0: Gather Requirements
+## Step 0: Inspect Inputs and Resolve Scientific Scope
 
-Before running any analysis, **always ask the user** to clarify their intent. The same data can be analyzed in fundamentally different ways depending on the biological question.
+The main agent normally inspects data and performs the requested analysis directly. Use the request and previous decisions first; inspect available cell types, organism, samples, and condition metadata before asking questions. No plan file or fixed questionnaire is required.
 
-**Q1 — Analysis goal:**
-> "What do you want to learn from cell communication analysis?"
->
-> - A) Discovery: find all significant interactions between all cell types (broad screening)
-> - B) Targeted: check if specific cell types communicate (e.g., T cells → tumor cells)
-> - C) Pathway-focused: investigate a specific signaling pathway (e.g., TGF-β, WNT, Notch)
-> - D) Condition comparison: compare communication between two conditions/treatments
+Resolve the choices that affect the biological question:
+- **Goal**: broad discovery, targeted source–target interactions, a specific pathway, or condition comparison.
+- **Scope**: all cell-type pairs or named sources/targets/pairs; list available labels from the relevant `adata.obs` column when clarification is needed.
+- **Design**: for condition comparisons, identify the contrast, biological replicates, pairing, and potential confounders. Do not treat cells as independent biological replicates.
+- **Method and organism**: reuse an agreed CellChat/LIANA+ choice and verified species. Discuss an unresolved consequential method choice; when technical selection is delegated, recommend and justify it using Method Selection above.
 
-**Q2 — Cell types of interest:**
-> "Which cell types are you interested in?"
->
-> - All pairs (source × target = all combinations)
-> - Specific sources (which cell types send signals?)
-> - Specific targets (which cell types receive signals?)
-> - Specific pairs (e.g., Macrophage → T cells only)
+Clarify missing or conflicting scientific choices before the affected computation, without re-asking settled constraints or requiring a fixed number of answers. Routine implementation details can use documented defaults. Conceptual questions can be answered without starting an analysis.
 
-If the AnnData is accessible, first list the available cell types from `adata.obs['cell_type'].unique()` before asking.
-
-**Q3 — Technical direction:**
-> "Which approach? (See Method Selection above.)"
->
-> - A) CellChat (R)
-> - B) LIANA+ (Python)
-> - C) Both — LIANA+ first for discovery, then CellChat for validation/highlights
-
-**Q4 — Organism (if not auto-detected):**
-> "Human or mouse?" (Determines database: CellChatDB.human vs CellChatDB.mouse / LIANA+ resource)
-
-Base your recommendations on the answers:
-- Goal A (discovery) + Python preference → LIANA+ with all cell type pairs
-- Goal C (pathway) → CellChat with that pathway
-- Goal D (comparison) → run independently per condition, then compare
+Recommendations:
+- Broad discovery + Python preference → LIANA+ with the requested cell-type pairs
+- Pathway-focused question → CellChat with that pathway
+- Condition comparison → run independently per condition, then compare while respecting sample-level replication
 - Small dataset (<5 cell types) → either works; large dataset (>15 types) → LIANA+ is faster
 
-Do NOT proceed to run analysis until Q1–Q4 are answered (organism may be auto-detected from the data).
+Record the selected scope, database, expression source, and validation checks with the results; validate outputs and biological interpretation rather than relying on a successful exit alone.
 
 ## CellChat (R)
 

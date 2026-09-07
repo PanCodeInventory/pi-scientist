@@ -8,7 +8,7 @@ compatibility: 'Requires scanpy>=1.10. seurat_v3 and seurat_v3_paper HVG flavors
 
 ## Overview
 
-The **upstream** preparation phase of single-cell analysis. Apply this skill **first**, before any other single-cell analysis step.
+The **upstream** preparation phase of single-cell analysis. Inspect existing preprocessing and storage semantics first; apply only the missing or explicitly requested preparation steps. Compatible processed data can be reused directly downstream without rerunning this skill. The data-storage and validation requirements below still apply.
 
 ## Quick Start
 

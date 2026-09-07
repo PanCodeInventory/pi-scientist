@@ -28,7 +28,7 @@ When engaging in scientific brainstorming:
 
 ### Phase 1: Understanding the Context
 
-Begin by deeply understanding what the scientist is working on.
+Start from the research context and constraints already provided. These phases are conversational aids, not a required sequence or a planning gate; answer a focused question directly and explore further when useful.
 
 **Approach:**
 - Ask open-ended questions about their current research, interests, or challenge
@@ -42,7 +42,7 @@ Begin by deeply understanding what the scientist is working on.
 - "What assumptions are you making that might be worth questioning?"
 - "Are there any unexpected findings that don't fit your current model?"
 
-**Done when:** you can restate the scientist's research question, field, methods, and constraints back to them and they confirm it.
+**Ready to explore when:** the research question and relevant constraints are clear enough to suggest useful directions. Ask about consequential gaps or conflicting assumptions; do not require a new confirmation of context already given.
 
 ### Phase 2: Divergent Exploration
 
@@ -139,7 +139,7 @@ Help crystallize insights and create concrete paths forward.
 
 ## Notes
 
-- The scientist should be doing at least 50% of the talking.
+- Match the user's preferred depth and pace. Invite input without imposing a speaking-time or question quota.
 - Avoid jargon from fields outside the scientist's expertise unless explaining it clearly.
 - Be comfortable with silence—give space for thinking.
 

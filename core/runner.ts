@@ -15,8 +15,8 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { Message } from "@earendil-works/pi-ai";
-import { getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import type { Message, Usage } from "@earendil-works/pi-ai";
+import { getMarkdownTheme, truncateHead, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import type { AgentConfig } from "./agents.js";
 
@@ -45,6 +45,8 @@ export interface AgentRunResult {
 	model?: string;
 	stopReason?: string;
 	errorMessage?: string;
+	/** All model usage reported by the subprocess, including nested tools. */
+	modelUsage?: Usage;
 }
 
 export interface AgentRunDetails {
@@ -76,7 +78,8 @@ export interface AgentRenderItem {
 
 export type OnAgentUpdate = (partial: { output: string; details: AgentRunDetails }) => void;
 
-interface AgentRunOptions {
+export interface AgentRunOptions {
+	timeoutSeconds?: number;
 	workDir?: string;
 	signal?: AbortSignal;
 	onUpdate?: OnAgentUpdate;
@@ -109,9 +112,7 @@ function getFinalOutput(messages: Message[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (msg.role === "assistant") {
-			for (const part of msg.content) {
-				if (part.type === "text") return part.text;
-			}
+			return truncateHead(msg.content.filter((part) => part.type === "text").map((part) => part.text).join("\n")).content;
 		}
 	}
 	return "";
@@ -128,7 +129,8 @@ function emptyUsage(): UsageStats {
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
 	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
-	if (currentScript && !isBunVirtualScript && fs.existsSync(currentScript)) {
+	// SDK/tests may have process.argv[1] pointing at an unrelated application.
+	if (currentScript && /(?:pi-coding-agent|coding-agent)[/\\].*cli\.[cm]?js$/.test(currentScript) && !isBunVirtualScript && fs.existsSync(currentScript)) {
 		return { command: process.execPath, args: [currentScript, ...args] };
 	}
 
@@ -168,7 +170,7 @@ async function writeSystemPrompt(agent: AgentConfig): Promise<string | null> {
 	}
 }
 
-/** Shared subprocess engine used by isolated spawn and session fork modes. */
+/** Isolated, bounded subprocess; no automatic follow-up agents. */
 async function spawnPiAgent(
 	cwd: string,
 	agent: AgentConfig,
@@ -186,6 +188,10 @@ async function spawnPiAgent(
 		stderr: "",
 		usage: emptyUsage(),
 		model: agent.model,
+		modelUsage: {
+			input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
 	};
 	let promptPath: string | null = null;
 
@@ -208,21 +214,22 @@ async function spawnPiAgent(
 	};
 
 	try {
+		options?.signal?.throwIfAborted();
 		promptPath = await writeSystemPrompt(agent);
 		if (promptPath) args.push("--append-system-prompt", promptPath);
 		args.push(`Task: ${task}`);
 
 		let wasAborted = false;
+		let timedOut = false;
 		const exitCode = await new Promise<number>((resolve) => {
 			const invocation = getPiInvocation(args);
 			const proc = spawn(invocation.command, invocation.args, {
 				cwd: options?.workDir ?? cwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
-				// Signal to the scientist extension's before_agent_start hook that this
-				// is a subagent: skip injecting the main-agent SCIENTIST_ENFORCEMENT
-				// prompt. Subagents carry their own agent .md system prompt instead.
-				env: { ...process.env, SCIENTIST_NO_ENFORCEMENT: "1" },
+				detached: process.platform !== "win32",
+				// Resources still load; Scientist tools/hooks do not register in children.
+				env: { ...process.env, SCIENTIST_SUBAGENT: "1", SCIENTIST_NO_ENFORCEMENT: "1" },
 			});
 			let buffer = "";
 
@@ -237,18 +244,23 @@ async function spawnPiAgent(
 
 				if (event.type === "message_end" && event.message) {
 					const msg = event.message as Message;
-					result.messages.push(msg);
-					if (msg.role === "assistant") {
-						result.usage.turns++;
-						const usage = msg.usage;
-						if (usage) {
-							result.usage.input += usage.input || 0;
-							result.usage.output += usage.output || 0;
-							result.usage.cacheRead += usage.cacheRead || 0;
-							result.usage.cacheWrite += usage.cacheWrite || 0;
-							result.usage.cost += usage.cost?.total || 0;
-							result.usage.contextTokens = usage.totalTokens || 0;
+					const usage = (msg as { usage?: Usage }).usage;
+					if (usage) {
+						for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+							result.usage[key] += usage[key] || 0;
+							result.modelUsage![key] += usage[key] || 0;
 						}
+						result.modelUsage!.totalTokens += usage.totalTokens || 0;
+						for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) {
+							result.modelUsage!.cost[key] += usage.cost?.[key] || 0;
+						}
+						result.usage.cost += usage.cost?.total || 0;
+					}
+					if (msg.role === "assistant") {
+						// Retain the final response, not the entire subprocess conversation.
+						result.messages = [msg];
+						result.usage.turns++;
+						result.usage.contextTokens = msg.usage?.totalTokens || 0;
 						if (!result.model && msg.model) result.model = msg.model;
 						if (msg.stopReason) result.stopReason = msg.stopReason;
 						if (msg.errorMessage) result.errorMessage = msg.errorMessage;
@@ -256,10 +268,6 @@ async function spawnPiAgent(
 					emitUpdate();
 				}
 
-				if (event.type === "tool_result_end" && event.message) {
-					result.messages.push(event.message as Message);
-					emitUpdate();
-				}
 			};
 
 			proc.stdout.on("data", (data: Buffer) => {
@@ -269,29 +277,48 @@ async function spawnPiAgent(
 				for (const line of lines) processLine(line);
 			});
 			proc.stderr.on("data", (data: Buffer) => {
-				result.stderr += data.toString();
+				result.stderr = (result.stderr + data.toString()).slice(-50_000);
 			});
+			let closed = false;
+			let killTimer: ReturnType<typeof setTimeout> | undefined;
+			const kill = (signal: NodeJS.Signals) => {
+				if (closed) return;
+				try {
+					if (process.platform !== "win32" && proc.pid) process.kill(-proc.pid, signal);
+					else proc.kill(signal);
+				} catch { /* Already exited. */ }
+			};
+			const stop = () => {
+				kill("SIGTERM");
+				killTimer ??= setTimeout(() => kill("SIGKILL"), 1000);
+			};
+			const abort = () => { wasAborted = true; stop(); };
+			const timeout = setTimeout(() => { timedOut = true; stop(); }, (options?.timeoutSeconds ?? 600) * 1000);
+			const cleanup = () => {
+				closed = true;
+				clearTimeout(timeout);
+				if (killTimer) clearTimeout(killTimer);
+				options?.signal?.removeEventListener("abort", abort);
+			};
 			proc.on("close", (code: number | null) => {
+				cleanup();
 				if (buffer.trim()) processLine(buffer);
-				resolve(code ?? 0);
+				resolve(code ?? 1);
 			});
-			proc.on("error", () => resolve(1));
-
-			if (options?.signal) {
-				const killProc = () => {
-					wasAborted = true;
-					proc.kill("SIGTERM");
-					setTimeout(() => {
-						if (!proc.killed) proc.kill("SIGKILL");
-					}, 5000);
-				};
-				if (options.signal.aborted) killProc();
-				else options.signal.addEventListener("abort", killProc, { once: true });
-			}
+			proc.on("error", (error) => { result.errorMessage = error.message; cleanup(); resolve(1); });
+			if (options?.signal?.aborted) abort();
+			else options?.signal?.addEventListener("abort", abort, { once: true });
 		});
 
 		result.exitCode = exitCode;
-		if (wasAborted) throw new Error("Agent was aborted");
+		if (wasAborted || timedOut) {
+			result.exitCode = 1;
+			result.stopReason = "aborted";
+			result.errorMessage = wasAborted ? "Agent was aborted" : `Agent exceeded ${options?.timeoutSeconds ?? 600}s runtime limit. Detached analysis jobs may still be running; inspect their logs before retrying.`;
+		} else if (!result.messages.some((message) => message.role === "assistant")) {
+			result.exitCode = 1;
+			result.errorMessage ||= "Agent exited without an assistant response.";
+		}
 		return result;
 	} finally {
 		if (promptPath) {
@@ -318,7 +345,8 @@ export async function runAgent(
 	const agent = agents.find((candidate) => candidate.name === agentName);
 	if (!agent) return unknownAgentResult(agents, agentName, task);
 
-	const args = ["--mode", "json", "-p", "--no-session"];
+	const args = ["--mode", "json", "-p", "--no-session", "--exclude-tools",
+		"sci_scout,sci_librarian,sci_implement,sci_review,sci_logs,ask_user_question,sci_dispatch,sci_tasks,sci_handoff"];
 	if (agent.model) args.push("--model", agent.model);
 	if (agent.tools?.length) args.push("--tools", agent.tools.join(","));
 	return spawnPiAgent(cwd, agent, task, args, options);
@@ -333,7 +361,7 @@ export function renderAgentResult(
 	expanded: boolean,
 	theme: any,
 ): Text | Container {
-	const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+	const isError = result.exitCode !== 0 || ["error", "aborted", "length"].includes(result.stopReason ?? "");
 	const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
 
 	if (!expanded) {

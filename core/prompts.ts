@@ -1,41 +1,18 @@
-export function buildWorkerTask(planFile: string, workDir: string): string {
-	return `Read the plan file at \`${planFile}\` and execute the next unchecked analysis step. Effective analysis parent directory: ${workDir}. The plan file must declare the analysis parent directory, plan file path, and concrete module directory for each step. Follow the methodology and skill specified in that step, and write every generated script/config/result under the declared module directory (e.g. <NN>_ModuleName/, sibling to Task/, not inside Task/). Do NOT create README.md files or 99_Report/. DO NOT modify the plan file — the reviewer agent handles plan updates.`;
-}
-
-export function buildReviewTask(options: {
-	planFile: string;
-	workDir: string;
-	handoffJson?: string | null;
-	standalone?: boolean;
-}): string {
-	const { planFile, workDir, handoffJson, standalone = false } = options;
-	if (handoffJson) {
-		return `Worker completed a step. Here is the worker's handoff JSON:\n\n\`\`\`json\n${handoffJson}\n\`\`\`\n\nAnalysis parent directory: ${workDir}.\nPlan file: \`${planFile}\`.\n\nUse the handoff JSON to do a TARGETED review: only review the files listed in \`filesToReview\`. Match \`stepId\` to the plan's Task Details to verify parameters. After review, update the plan file: mark \`- [x]\` on PASS, or add fix steps on NEEDS FIX.`;
-	}
-
-	const identifyStep = standalone
-		? "Identify the latest step that the worker executed"
-		: "The worker has just completed a step — find the latest step that was executed";
-	const passAction = standalone
-		? "mark the checkbox `- [x]` in the Todolist and optionally add review notes"
-		: "mark the checkbox `- [x]`";
-	const fixAction = standalone
-		? "add concrete fix steps to the Todolist and Task Details sections"
-		: "add fix steps to the plan";
-
-	return `Read the plan file at \`${planFile}\`. Effective analysis parent directory: ${workDir}. ${identifyStep} (it will still be marked \`- [ ]\` because the worker is forbidden from modifying the plan). Review its outputs for code correctness, statistical validity, figure quality (MUST first read skills/visualization/shared/figure-standards.md, then run its 6 BLOCKER checks — any failure is NEEDS FIX), data provenance, and plan compliance. If PASS: ${passAction}. If NEEDS FIX: ${fixAction}. Update the plan file accordingly.`;
-}
-
-export function buildCompletionReminder(): string {
+/** Task briefs for optional delegation. No hidden review or plan-update pipeline. */
+export function buildWorkerTask(options: { task?: string; planFile?: string; workDir: string }): string {
 	return [
-		"## 分析已完成 / Analysis Complete",
-		"All Todolist items in the plan are now checked. Do NOT write the final report, and do NOT dispatch any more subagents.",
-		"",
-		"Next, the main agent must:",
-		"1. Summarize the completed analysis to the user: what was done, the key results, and any caveats or open questions.",
-		"2. Tell the user that when the results are confirmed and finalized after discussion, they can run `/generate-report` to generate the final self-contained Chinese HTML report. That command synthesizes the analysis results together with the session discussion.",
-		"3. Do NOT git commit on your own — wait for the user to decide after reviewing the report.",
-		"",
-		"The final report is generated on-demand by the user via `/generate-report`, never automatically. It is not a subagent step.",
-	].join("\n");
+		`Analysis parent directory: ${options.workDir}.`,
+		options.task?.trim(),
+		options.planFile ? `Read the optional plan at \`${options.planFile}\`. ${options.task?.trim() ? "Execute only the explicitly assigned scope." : "Execute the next unchecked step only; if none remain, report that without executing anything."}` : "No persistent plan is required.",
+		"Preserve the user's output conventions. Validate actual outputs and report paths, checks and unresolved issues. You own progress updates for the assigned step if a plan exists; only mark it complete after validation. Do not mark unrelated steps or imply independent review occurred. There is no automatic reviewer. Do not delegate further.",
+	].filter(Boolean).join("\n\n");
+}
+
+export function buildReviewTask(options: { task?: string; planFile?: string; workDir: string }): string {
+	return [
+		`Review scope in analysis directory: ${options.workDir}.`,
+		options.task?.trim() || "Review the analysis described by the supplied plan; identify the relevant outputs and explicitly state your review scope.",
+		options.planFile ? `Optional context: \`${options.planFile}\`.` : "No plan file is required.",
+		"Perform a read-only, risk-focused review of scientific design, real outputs, provenance and applicable user conventions. Inspect expected outputs as well as supplied file lists; do not trust a worker's list as proof of completeness. Do not edit files, update checkboxes, add fix steps, or re-run analyses. Report findings with evidence, severity and concrete fixes, plus what you could not verify. The main agent decides next actions.",
+	].filter(Boolean).join("\n\n");
 }

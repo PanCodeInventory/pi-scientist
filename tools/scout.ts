@@ -4,9 +4,9 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { discoverScientists } from "../core/agents.js";
 import { runAgent, renderAgentResult, type AgentRunDetails, type AgentRenderItem } from "../core/runner.js";
-import { extractOutput, makeDetails } from "./shared.js";
+import { agentToolResult } from "./shared.js";
 
-export function registerScoutTool(pi: ExtensionAPI): void {
+export function registerScoutTool(pi: ExtensionAPI, run = runAgent): void {
 	pi.registerTool({
 		name: "sci_scout",
 		label: "Sci Scout",
@@ -14,17 +14,17 @@ export function registerScoutTool(pi: ExtensionAPI): void {
 			"Dispatch a data-aware scout agent to inspect bioinformatics data files and return structured findings.",
 			"The scout identifies data formats (h5ad, csv, bam, vcf, etc.), reports dimensions, metadata,",
 			"experimental design, and data quality metrics.",
-			"Use this BEFORE planning any analysis — never start without understanding the data.",
+			"Optional: use when a separate inspection saves context; direct inspection by the main agent is equally valid. Output bounded to 50KB/2000 lines with a full-text path when truncated.",
 			"Set thoroughness: 'quick' for format check, 'medium' (default) for dimension/metadata scan,",
 			"'thorough' for full QC metrics and experimental design assessment.",
 		].join(" "),
 		promptSnippet: "Dispatch data-aware scout to inspect bioinformatics data for TASK",
 		promptGuidelines: [
-			"MUST call sci_scout BEFORE any analysis planning to inspect data files. This is REQUIRED — never skip scouting.",
-			"For every analysis, call scout first. Even if you think you know the data format, scout anyway — you need fresh context.",
+			"Use sci_scout only for an independent inspection with a concrete scope; reuse existing findings rather than scouting repeatedly.",
 		],
 		parameters: Type.Object({
-			task: Type.String({ description: "What to inspect: data files, formats, dimensions, metadata, experimental design" }),
+			task: Type.String({ description: "What to inspect: data files, formats, dimensions, metadata, experimental design", minLength: 1 }),
+			timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 3600, description: "Agent runtime limit; default 600 seconds" })),
 			thoroughness: Type.Optional(
 				StringEnum(["quick", "medium", "thorough"] as const, {
 					description: "How deeply to inspect. Default: medium.",
@@ -35,21 +35,16 @@ export function registerScoutTool(pi: ExtensionAPI): void {
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const discovery = discoverScientists();
-			const result = await runAgent(ctx.cwd, discovery.agents, "scout", params.task, {
-				signal,
+			const task = `Inspection depth: ${params.thoroughness ?? "medium"}.\n${params.task}`;
+			const result = await run(ctx.cwd, discovery.agents, "scout", task, {
+				signal, timeoutSeconds: params.timeoutSeconds,
 				onUpdate: onUpdate ? (u) => onUpdate({
 					content: [{ type: "text", text: u.output }],
 					details: u.details as AgentRunDetails,
 				}) : undefined,
 			});
 
-			const output = extractOutput(result);
-
-			return {
-				content: [{ type: "text", text: output || "(no output)" }],
-				details: makeDetails(result, output),
-				isError: result.exitCode !== 0,
-			};
+			return agentToolResult(result);
 		},
 
 		renderCall(args, theme, _context) {

@@ -1,6 +1,6 @@
 ---
 name: tmux-runner
-description: 'Run a long-running step under tmux so it survives agent timeouts. Use when the plan marks a step **Long-running**: yes or >5min, the data is large, the step uses heavy tools (SCENIC, CellRanger, STAR, …), or you judge it will take more than ~2 minutes.'
+description: 'Run a long-running analysis under tmux so it survives agent timeouts. Use for heavy tools (SCENIC, CellRanger, STAR, …), large data, or jobs expected to take more than ~2 minutes. No plan or delegated worker is required.'
 ---
 
 # Tmux Runner
@@ -9,8 +9,8 @@ Canonical wrapper + workflow for executing a long-running analysis script inside
 detached tmux session, so it survives agent timeouts and can be monitored in real
 time.
 
-The main agent does NOT invoke this directly. The **worker** loads it when it
-decides a step is long-running.
+The main agent can use this directly. A delegated execution worker can use the
+same wrapper when useful; neither delegation nor a plan file is required.
 
 ## The wrapper script
 
@@ -85,9 +85,10 @@ After the session ends:
 
 1. `cat <Module>/tmux/<session>.status` → expect `EXIT_STATUS:0` (the manifest's
    `"exitCode"` is the same value — one check suffices)
-2. Every output file the stage's plan declares, present and non-empty
-3. Grep the log for the script's error markers (traceback, ERROR, WARNING) — zero
-   matches
+2. Expected output files (from the task or an optional plan) are present,
+   non-empty, readable, and pass the analysis-specific content checks
+3. Inspect the log for traceback, ERROR, and WARNING; resolve errors and assess
+   warnings rather than treating every warning as failure
 
 ## Error handling
 
@@ -104,11 +105,14 @@ After verifying results:
 tmux kill-session -t "sci_<module>_<step>" 2>/dev/null || true
 ```
 
-## Files produced (declare in the handoff JSON when tmux was used)
+## Files produced
 
-A tmux run creates, under the module:
+Record these paths with the execution outcome (and in a delegated handoff if
+one is used):
 
-- `scripts/utils/tmux_runner.sh` → handoff role `tmux_wrapper`
-- `tmux/<session>.log` → handoff role `tmux_log`
-- `tmux/<session>.status` → handoff role `tmux_status`
+- `scripts/utils/tmux_runner.sh` → copied wrapper
+- `tmux/<session>.log` → execution log
+- `tmux/<session>.status` → actual script exit status
 - `tmux/manifest.jsonl` → append-only run history (one JSON line per run)
+
+The executor updates any checklist or plan after verifying completion.

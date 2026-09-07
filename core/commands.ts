@@ -3,134 +3,56 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Resolve the bundled HTML report template, handling both source and dist layouts. */
+/** Resolve the bundled HTML template in source and dist layouts. */
 function resolveReportTemplatePath(): string {
-	const candidates = [__dirname, path.resolve(__dirname, ".."), path.resolve(__dirname, "..", "..")];
-	const root = candidates.find((candidate) => fs.existsSync(path.join(candidate, "skills")))
-		?? path.resolve(__dirname, "..");
+	const root = [__dirname, path.resolve(__dirname, ".."), path.resolve(__dirname, "..", "..")]
+		.find((candidate) => fs.existsSync(path.join(candidate, "skills"))) ?? path.resolve(__dirname, "..");
 	return path.join(root, "skills", "analysis-planning", "references", "report-template.html");
 }
 
 export function registerReflectCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("reflect", {
-		description: "\u81ea\u7701\u6a21\u5f0f\uff1a\u56de\u987e\u5df2\u5b8c\u6210\u7684\u5206\u6790\uff0c\u901a\u8fc7\u82cf\u683c\u62c9\u5e95\u5f0f\u63d0\u95ee\u5e2e\u52a9\u4f60\u6df1\u5165\u7406\u89e3\u6280\u672f\u539f\u7406\u548c\u53c2\u6570",
-		async handler(_args, ctx) {
-			const INTROSPECTION_PROMPT = [
-				"## \ud83d\udd2c \u81ea\u7701\u6a21\u5f0f\u542f\u52a8",
-				"",
-				"\u4f60\u73b0\u5728\u8981\u626e\u6f14\u4e00\u4f4d\u4e25\u8c28\u4f46\u8010\u5fc3\u7684\u5bfc\u5e08\uff0c\u5e2e\u52a9\u7528\u6237\u6df1\u5165\u7406\u89e3\u672c\u6b21\u5206\u6790\u7684\u6280\u672f\u7ec6\u8282\u3002",
-				"",
-				"### \u4efb\u52a1\u6b65\u9aa4\uff1a",
-				"",
-				"1. **\u56de\u987e\u672c\u6b21\u5bf9\u8bdd\u4e2d\u5df2\u5b8c\u6210\u7684\u6240\u6709\u5206\u6790\u548c\u4ee3\u7801** \u2014 \u4ed4\u7ec6\u9605\u8bfb\u5bf9\u8bdd\u5386\u53f2\u4e2d\u6d89\u53ca\u7684\u5206\u6790\u6b65\u9aa4\u3001\u4f7f\u7528\u7684\u65b9\u6cd5\u3001\u8c03\u7528\u7684\u5de5\u5177\u3001\u751f\u6210\u7684\u4ee3\u7801\u548c\u7ed3\u679c\u3002\u5982\u679c\u5bf9\u8bdd\u4e2d\u6d89\u53ca\u591a\u4e2a\u5206\u6790\u6b65\u9aa4\uff0c\u6309\u987a\u5e8f\u9010\u4e00\u56de\u987e\u3002",
-				"",
-				"2. **\u751f\u6210\u7ed3\u6784\u5316\u7684\u6280\u672f\u95ee\u9898\u6e05\u5355** \u2014 \u9488\u5bf9\u672c\u6b21\u5206\u6790\u6d89\u53ca\u7684\u6838\u5fc3\u6280\u672f\u70b9\uff0c\u751f\u6210\u4e00\u7cfb\u5217\u7531\u6d45\u5165\u6df1\u7684\u95ee\u9898\uff0c\u8986\u76d6\u4ee5\u4e0b\u7ef4\u5ea6\uff1a",
-				"   - \u6570\u636e\u9884\u5904\u7406\u6b65\u9aa4\u7684\u539f\u7406\u548c\u53c2\u6570\u9009\u62e9\u4f9d\u636e\uff08\u4e3a\u4ec0\u4e48\u9009\u8fd9\u4e2a\u5206\u8fa8\u7387/\u9608\u503c/\u8fc7\u6ee4\u6807\u51c6\uff09",
-				"   - \u6240\u7528\u7edf\u8ba1\u65b9\u6cd5\u7684\u5047\u8bbe\u6761\u4ef6\u548c\u9002\u7528\u8303\u56f4\uff08\u4ec0\u4e48\u6761\u4ef6\u4e0b\u8be5\u65b9\u6cd5\u6709\u6548\uff0c\u4ec0\u4e48\u6761\u4ef6\u4e0b\u4f1a\u5931\u6548\uff09",
-				"   - \u5173\u952e\u53c2\u6570\u7684\u6570\u5b66/\u751f\u7269\u5b66\u542b\u4e49\uff08\u6bcf\u4e2a\u53c2\u6570\u5728\u6a21\u578b\u4e2d\u4ee3\u8868\u4ec0\u4e48\uff09",
-				"   - \u7ed3\u679c\u89e3\u8bfb\u7684\u65b9\u6cd5\u8bba\u57fa\u7840\uff08\u5982\u4f55\u6b63\u786e\u7406\u89e3 p-value\u3001logFC\u3001cluster \u5206\u6570\u7b49\uff09",
-				"   - \u6f5c\u5728\u7684\u5c40\u9650\u6027\u548c\u66ff\u4ee3\u65b9\u6848\uff08\u8fd9\u4e2a\u5206\u6790\u53ef\u80fd\u6709\u54ea\u4e9b\u76f2\u533a\uff09",
-				"",
-				"3. **\u4ee5\u82cf\u683c\u62c9\u5e95\u5f0f\u5bf9\u8bdd\u9010\u4e00\u63d0\u95ee** \u2014 \u6bcf\u6b21\u53ea\u95ee\u4e00\u4e2a\u95ee\u9898\uff0c\u7b49\u5f85\u7528\u6237\u56de\u7b54\u540e\uff1a",
-				"   - \u5982\u679c\u7528\u6237\u56de\u7b54\u6b63\u786e\u4e14\u7406\u89e3\u6df1\u5165\uff0c\u7b80\u8981\u80af\u5b9a\uff08\u6307\u51fa\u56de\u7b54\u4e2d\u7279\u522b\u597d\u7684\u5730\u65b9\uff09\u5e76\u8fdb\u5165\u4e0b\u4e00\u4e2a\u95ee\u9898",
-				"   - \u5982\u679c\u7528\u6237\u56de\u7b54\u4e0d\u5b8c\u6574\u6216\u6709\u8bef\u89e3\uff0c\u6e29\u548c\u5730\u6307\u51fa\u9519\u8bef\u5e76\u89e3\u91ca\u6b63\u786e\u6982\u5ff5\uff0c\u7136\u540e\u4ece\u53e6\u4e00\u4e2a\u89d2\u5ea6\u518d\u6b21\u63d0\u95ee\u540c\u4e00\u77e5\u8bc6\u70b9",
-				"   - \u5982\u679c\u7528\u6237\u8868\u793a\u4e0d\u7406\u89e3\uff0c\u7528\u66f4\u901a\u4fd7\u7684\u65b9\u5f0f\u89e3\u91ca\u2014\u2014\u53ef\u4ee5\u4e3e\u7c7b\u6bd4\u3001\u7528\u751f\u6d3b\u5316\u7684\u6bd4\u55bb\u3001\u6216\u753b\u51fa\u6982\u5ff5\u5173\u7cfb\u56fe",
-				"   - \u6bcf\u4e2a\u95ee\u9898\u90fd\u5e94\u7ed3\u5408\u672c\u6b21\u5206\u6790\u7684\u5b9e\u9645\u6570\u636e\u548c\u7ed3\u679c\u4f5c\u4e3a\u5177\u4f53\u6848\u4f8b",
-				"",
-				"4. **\u6301\u7eed\u8fdb\u884c\u76f4\u5230\u6ee1\u8db3\u4ee5\u4e0b\u6240\u6709\u6761\u4ef6**\uff1a",
-				"   - \u7528\u6237\u80fd\u591f\u6e05\u6670\u89e3\u91ca\u6240\u6709\u6838\u5fc3\u6280\u672f\u539f\u7406\uff08\u7528\u81ea\u5df1\u7684\u8bed\u8a00\uff0c\u800c\u975e\u80cc\u8bf5\u5b9a\u4e49\uff09",
-				"   - \u7528\u6237\u7406\u89e3\u6bcf\u4e2a\u5173\u952e\u53c2\u6570\u7684\u542b\u4e49\u548c\u9009\u62e9\u4f9d\u636e",
-				"   - \u7528\u6237\u4e86\u89e3\u65b9\u6cd5\u7684\u5c40\u9650\u6027\u548c\u9002\u7528\u6761\u4ef6",
-				"   - \u7528\u6237\u660e\u786e\u8868\u793a\u5df2\u5b8c\u5168\u7406\u89e3\uff0c\u6216\u8f93\u5165\"\u7ed3\u675f\u81ea\u7701\"\u6216\"\u6211\u61c2\u4e86\"\u6765\u7ed3\u675f",
-				"",
-				"### \u91cd\u8981\u539f\u5219\uff1a",
-				"- \u4e0d\u8981\u4e00\u6b21\u6027\u5217\u51fa\u6240\u6709\u95ee\u9898\uff0c\u9010\u4e00\u63d0\u95ee",
-				"- \u6839\u636e\u7528\u6237\u7684\u56de\u7b54\u8c03\u6574\u540e\u7eed\u95ee\u9898\u7684\u6df1\u5ea6\u548c\u65b9\u5411",
-				"- \u9f13\u52b1\u7528\u6237\u7528\u81ea\u5df1\u7684\u8bed\u8a00\u89e3\u91ca\uff0c\u800c\u4e0d\u662f\u80cc\u8bf5\u5b9a\u4e49",
-				"- \u5982\u679c\u53d1\u73b0\u7528\u6237\u5bf9\u57fa\u7840\u6982\u5ff5\u6709\u8bef\u89e3\uff0c\u5148\u7ea0\u6b63\u57fa\u7840\u518d\u7ee7\u7eed",
-				"   - \u7528\u672c\u6b21\u5206\u6790\u7684\u5b9e\u9645\u6570\u636e\u548c\u7ed3\u679c\u4f5c\u4e3a\u6559\u5b66\u6848\u4f8b",
-				"- \u5728\u5f00\u59cb\u63d0\u95ee\u524d\uff0c\u5148\u7b80\u8981\u603b\u7ed3\u4f60\u4ece\u5bf9\u8bdd\u5386\u53f2\u4e2d\u56de\u987e\u5230\u7684\u5206\u6790\u6982\u51b5\uff0c\u8ba9\u7528\u6237\u77e5\u9053\u4f60\u5c06\u8981\u9488\u5bf9\u54ea\u4e9b\u5185\u5bb9\u63d0\u95ee",
-				"",
-				"\u8bf7\u5148\u56de\u987e\u5bf9\u8bdd\u5386\u53f2\uff0c\u7136\u540e\u4ece\u7b2c\u4e00\u4e2a\u95ee\u9898\u5f00\u59cb\u3002",
-			].join("\n");
-
-			pi.sendUserMessage(INTROSPECTION_PROMPT);
+		description: "结合实际结果，按需讨论方法、参数和局限性",
+		async handler(args) {
+			pi.sendUserMessage([
+				"回顾本次分析，用实际数据与结果解释关键方法、参数依据和局限性。",
+				"先给简短总结，再按用户的兴趣讨论；若用户希望练习，可逐题交流。不要强制考试或固定问题配额，不运行新分析。",
+				args.trim(),
+			].filter(Boolean).join("\n"), { deliverAs: "followUp" });
 		},
 	});
 }
 
 export function registerGenerateReportCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("generate-report", {
-		description: "结果与讨论确认无误后，综合分析结果与本次会话讨论，生成最终自包含中文 HTML 报告（手动触发）",
-		async handler(args, _ctx) {
-			const templatePath = resolveReportTemplatePath();
-			const extra = (args ?? "").trim();
-			const prompt = [
-				"## 生成最终分析报告 / Generate Final Report",
-				"",
-				"用户在确认分析结果与讨论无误后，手动触发了报告生成。这是最终交付物，仅在用户明确要求时进行。",
-				"",
-				"### 数据来源（全部要综合进报告）",
-				"1. **计划文件** — 定位最新的 `Task/TaskN-*.md`（若有多份取最近修改的；若找不到则询问用户路径）。从中读取 TaskID、分析父目录、模块布局、Todolist 与 Task Details、方法学与参数依据。",
-				"2. **分析产物** — 读取各模块目录下的关键结果：h5ad 摘要、结果表（tables/）、图（plots/）、关键脚本与配置。挑选最能支撑结论的图与表进入报告。",
-				"3. **本次会话的讨论** — 重点回顾对话历史中与用户达成的解读、结论、保留意见、限定条件、人工调整。这些常不在文件里，却对“核心结论”与“图片详解”至关重要。若讨论中有尚未落地的修改或补充，先与用户确认再写入。",
-				"",
-				"### 报告模板",
-				`读取并遵循报告模板：\`${templatePath}\`。保持其结构与样式（黑白学术排版、编号章节、三线表、编号图注、四段式章节），把演示数据替换为真实内容；删除模板里生成占位图的 <script>，把每个 <figure> 内的 SVG 换成真实图片。`,
-				"",
-				"### 硬性要求",
-				"- 文件名：`Report/<TaskID>-<具体内容>-<YYYYMMDD>.html`，TaskID 与计划文件前缀一致，<具体内容> 简短且文件名安全。先创建 `Report/` 目录（若不存在）。",
-				"- 自包含：所有图片以 `data:image/png;base64,...` 内嵌；无任何外部依赖。",
-				"- 全中文。",
-				"- 必含四段：①分析思路与方法选择（含方法/参数取舍依据）②核心结论（数据说话）③图片详解（每图三句：展示什么 / 关键信息 / 生物学含义）④文件与复现索引（模块目录、关键脚本、配置、结果表与图的位置）。",
-				"- 不要创建 README、不要创建 99_Report/、不要把报告作为子任务。",
-				"- 不要自行 git commit。报告写完后告知用户路径与一句话摘要，由用户审阅后再决定是否提交。",
-				...(extra ? ["", "### 用户本次补充指示", extra] : []),
-				"",
-				"现在开始：先定位并读取计划文件与关键产物、回顾会话讨论、读取模板，然后写出报告，最后告知用户报告路径与一句话摘要。",
-			].join("\n");
-			pi.sendUserMessage(prompt);
+		description: "按需生成自包含中文 HTML 报告；不要求 Task 文件",
+		async handler(args) {
+			pi.sendUserMessage([
+				"用户请求生成分析报告。结合明确的任务范围、实际代码/配置/产物与会话讨论，主代理直接生成自包含中文 HTML。",
+				"若有相关 Task 文件可作为索引，但不是前置条件；不要仅按修改时间猜测哪个结果权威。范围不清时询问。",
+				`读取模板 \`${resolveReportTemplatePath()}\`，保留黑白学术排版，用真实结果替换演示内容，移除占位脚本。`,
+				"包含：方法与参数依据、证据支持的核心结论、逐图解释、文件与复现索引；明确未解决问题和未验证内容。请求报告不等于结果已经确认。",
+				"保存至分析目录的 Report/<TaskID或主题>-<YYYYMMDD>.html，图片以 data URI 内嵌，无外部依赖。无需为报告补建计划或调度子代理。",
+				"告知报告路径，未经用户要求不 commit/push。",
+				args.trim(),
+			].filter(Boolean).join("\n"), { deliverAs: "followUp" });
 		},
 	});
 }
 
 export function registerPublicationCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("publication", {
-		description: "Publication 模式（手动触发）：把已完成分析的输出整合为一图一 Jupyter Notebook，相对路径、单一图片导出，不走 Plan-Implement 链路",
-		async handler(args, _ctx) {
-			const extra = (args ?? "").trim();
-			const prompt = [
-				"## Publication 模式启动 / Publication Mode Activated",
-				"",
-				"用户手动触发了 Publication 模式。读取并遵循 `publication` skill。这是成图整理，不是新分析。",
-				"",
-				"### 硬性规则",
-				"- 不走 Plan-Implement 链路：不要创建 `Task/TaskN-*.md`，不要调用 `sci_implement` / `sci_review`，不要派发 worker/reviewer 子代理。",
-				"- 主代理直接用 `write` 工具（nbformat 4 JSON）或 `jupytext` 写 notebook。",
-				"- 输出位置：分析父目录下的顶层 `Publication/` 文件夹（与 `Task/`、`<NN>_ModuleName/` 平级）。",
-				"- 一图一 notebook：`Publication/FigureN_<short>.ipynb`（或 `Publication/FigureN_<short>/FigureN.ipynb` 配 `exports/` 子目录）。",
-				"- 只用相对路径引用既有分析输出（如 `../02_Clustering/results/data/02_clustered.h5ad`）；绝不复制或内嵌大数据；小型论文级元数据（细胞类型配色、基因列表、分组顺序）可作为显式 cell 写入。",
-				"- 每个 notebook 只导出**单一图片**，不做 panel 组合（用户自行拼版）。导出 PDF（矢量）+ PNG 300dpi，遵循 `skills/visualization/shared/figure-standards.md`，禁止 JPEG。",
-				"- 一个 notebook 一个内核（Python 或 R），按绘图库选择。",
-				"- 每个 notebook 必须能 Restart & Run All 从头复现。",
-				"",
-				"### 流程",
-				"1. 用 `sci_scout` 轻量盘点既有分析输出（哪些模块、哪些 h5ad/表/图、用了什么参数）。",
-				"2. 把盘点结果告诉用户。用 `ask_user_question`（每轮一个问题）只问那些数据无法回答、且会影响成图的选择：期刊/栏宽/格式/配色/要出哪几张图、各自数据源。不要制造不影响 notebook 的问题。",
-				"3. 创建 `Publication/`，逐个写出 notebook：首个 cell 为参数 cell；每个绘图 cell 顶部注释标注来源模块/脚本/步骤；末 cell 按 figure-standards 尺寸/DPI 导出单一图片。",
-				"4. 逐个 Run All（inline 或 `jupyter nbconvert --execute --inplace`）确认复现，把导出图片路径告知用户。",
-				"5. 不要 git commit、不要建 Task 计划/README/Report。总结产出并停止。",
-				"",
-				"### 边界",
-				"Publication 模式不重新分析、不计算新统计、不生成 `Report/`、不建 `Task/`、不派子代理。若某图需要新计算，说明这是 CONTINUE/NEW——停止 Publication 模式并告知用户。",
-				...(extra ? ["", "### 用户本次补充指示", extra] : []),
-				"",
-				"现在开始：先读取 `publication` skill，再轻量盘点既有分析输出，然后与用户确认要出哪几张图及其数据源。",
-			].join("\n");
-			pi.sendUserMessage(prompt);
+		description: "将既有结果整理为可复现的一图一 Jupyter Notebook",
+		async handler(args) {
+			pi.sendUserMessage([
+				"用户请求 Publication 成图整理。读取 publication skill，直接盘点相关既有结果，只澄清影响交付的未知选择。",
+				"在分析目录 Publication/ 下生成一图一 notebook，相对路径引用数据，不复制大数据；保留来源与参数，导出单张图 PDF + PNG。",
+				"实际从头执行 notebook 验证复现。无需 Task、Scout 或 worker/reviewer 链；若缺少数据或需要新增分析，说明缺口并确认扩展范围。",
+				"完成后告知产物和验证情况，不自动生成报告或 commit/push。",
+				args.trim(),
+			].filter(Boolean).join("\n"), { deliverAs: "followUp" });
 		},
 	});
 }
