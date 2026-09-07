@@ -13,7 +13,6 @@ import {
 	MAX_CONTRACT_CHARS,
 	RESOLUTION_LABELS,
 	STATE_VERSION,
-	groupEvidence,
 	type AskUserOption,
 	type DecisionCategory,
 	type EvidenceItem,
@@ -112,35 +111,22 @@ export function generateScientificContract(state: ScientificContractState): stri
 		: `${contract.slice(0, MAX_CONTRACT_CHARS)}\n\n[Contract truncated at ${MAX_CONTRACT_CHARS} characters]`;
 }
 
-export function formatEvidenceGrouped(evidence: EvidenceItem[]): string {
-	return groupEvidence(evidence)
-		.map(({ source, items }) => {
-			const body = items
-				.map((item) => item.reference ? `  • ${item.claim}（${item.reference}）` : `  • ${item.claim}`)
-				.join("\n");
-			return `${EVIDENCE_SOURCE_LABELS[source]}\n${body}`;
-		})
-		.join("\n");
-}
-
 export function formatPlainQuestion(params: {
 	question: string;
 	briefing?: string;
-	evidence?: EvidenceItem[];
-	whyItMatters?: string;
+	principles?: string;
 	recommendation?: ScientificRecommendation;
 }): string {
 	const sections: string[] = [];
 	// Lead with the decision itself so the question is unambiguous.
 	sections.push(`需要你决定\n${params.question.trim()}`);
+	if (params.principles?.trim()) sections.push(`原理\n${params.principles.trim()}`);
 	if (params.recommendation) {
 		const recommendation = params.recommendation;
 		const conditions = recommendation.conditions ? `\n适用条件：${recommendation.conditions}` : "";
 		sections.push(`推荐\n${recommendation.label ?? recommendation.value}：${recommendation.rationale}${conditions}`);
 	}
-	if (params.whyItMatters?.trim()) sections.push(`为什么重要\n${params.whyItMatters.trim()}`);
 	if (params.briefing?.trim()) sections.push(`背景\n${params.briefing.trim()}`);
-	if (params.evidence?.length) sections.push(`证据\n${formatEvidenceGrouped(params.evidence)}`);
 	return sections.join("\n\n");
 }
 
@@ -158,6 +144,7 @@ export function validateScientificQuestion(
 		dependsOn?: string[];
 		evidence?: EvidenceItem[];
 		whyItMatters?: string;
+		principles?: string;
 		recommendation?: ScientificRecommendation;
 		options?: AskUserOption[];
 		finalizesContract?: boolean;
@@ -170,6 +157,7 @@ export function validateScientificQuestion(
 	if (!params.evidence?.length) missing.push("evidence");
 	if (!params.whyItMatters?.trim()) missing.push("whyItMatters");
 	if (!params.recommendation) missing.push("recommendation");
+	if (params.category === "method" && !params.principles?.trim()) missing.push("principles");
 	if (missing.length > 0) {
 		throw new Error(`Scientific questions require structured context and a recommended answer. Missing: ${missing.join(", ")}`);
 	}

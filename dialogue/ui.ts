@@ -1,30 +1,34 @@
 // Interactive question UI for ask_user_question.
 //
 // Two render paths:
-//   - showScientificDialog: a custom TUI for scientific decisions (question
-//     first, recommendation, grouped evidence, inline editor for custom answers)
+//   - showScientificDialog: a bottom-anchored bounded overlay for scientific
+//     decisions — pinned question, scrollable context (recommendation first,
+//     then principles and briefing), SelectList options, inline custom editor,
+//     and a terminal bell on open so questions are hard to miss
 //   - showFallbackDialog: pi-native select/input/editor fallback used in
 //     non-TUI sessions or for administrative questions
 // Plus withWorkingLoaderHidden, which hides pi's streaming spinner while the
-// tall scientific dialog is on screen to avoid full-viewport flicker in tmux.
+// scientific overlay is open to avoid competing redraws and flicker in tmux.
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	Editor,
 	type EditorTheme,
+	Key,
+	matchesKey,
+	type SelectItem,
+	SelectList,
+	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { formatPlainQuestion, normalizeResolution } from "./contract.js";
 import {
 	CATEGORY_LABELS,
-	EVIDENCE_SOURCE_LABELS,
-	groupEvidence,
 	type AskUserOption,
 	type AskUserPurpose,
 	type DecisionCategory,
 	type DialogSelection,
-	type EvidenceItem,
 	type ScientificRecommendation,
 } from "./types.js";
 
@@ -34,8 +38,7 @@ export async function showScientificDialog(
 		decisionId: string;
 		category: DecisionCategory;
 		briefing?: string;
-		evidence: EvidenceItem[];
-		whyItMatters: string;
+		principles?: string;
 		recommendation: ScientificRecommendation;
 		options?: AskUserOption[];
 		allowCustom?: boolean;
@@ -47,17 +50,46 @@ export async function showScientificDialog(
 	const options = params.options ?? [];
 	const allowCustom = options.length === 0 || params.allowCustom !== false;
 
+	// Attention cue: BEL turns into a pane/dock alert in tmux and most terminals,
+	// drawing the user back when the question arrives while they are looking
+	// elsewhere. Best-effort only.
+	try {
+		process.stdout.write("\x07");
+	} catch {
+		/* ignore */
+	}
+
 	return await ctx.ui.custom<DialogSelection | null>((tui, theme, keybindings, done) => {
-		let selectedIndex = 0;
 		let editMode = options.length === 0;
-		let evidenceExpanded = params.evidence.length <= 3;
+		let contextScrollTop = 0;
+		let contextPageSize = 1;
+		let contextContentHeight = 0;
 		let validationMessage = "";
 		let focused = false;
 		let cachedWidth: number | undefined;
+		let cachedHeight: number | undefined;
 		let cachedLines: string[] | undefined;
 
-		const customOptionIndex = options.length;
-		const displayOptionCount = options.length + (allowCustom ? 1 : 0);
+		const customItemValue = "__scientist_custom_answer__";
+		const selectItems: SelectItem[] = options.map((option, index) => {
+			const recommended = option.recommended || (option.value ?? option.label) === params.recommendation.value;
+			return {
+				value: `option:${index}`,
+				label: `${index + 1}. ${option.label}${recommended ? " [推荐]" : ""}`,
+				description: option.description,
+			};
+		});
+		if (allowCustom) {
+			selectItems.push({
+				value: customItemValue,
+				label: `${options.length + 1}. 自定义答案`,
+				description: "输入未包含在预设选项中的答案",
+			});
+		}
+		const maxVisibleOptions = Math.min(
+			selectItems.length,
+			Math.max(2, Math.min(6, Math.floor(tui.terminal.rows * 0.2))),
+		);
 		const editorTheme: EditorTheme = {
 			borderColor: (text) => theme.fg("accent", text),
 			selectList: {
@@ -70,9 +102,16 @@ export async function showScientificDialog(
 		};
 		const editor = new Editor(tui, editorTheme);
 		editor.setText(params.placeholder ?? "");
+		const selectList = selectItems.length > 0
+			? new SelectList(selectItems, maxVisibleOptions, editorTheme.selectList, {
+				minPrimaryColumnWidth: 18,
+				maxPrimaryColumnWidth: 36,
+			})
+			: undefined;
 
 		function refresh(): void {
 			cachedWidth = undefined;
+			cachedHeight = undefined;
 			cachedLines = undefined;
 			tui.requestRender();
 		}
@@ -101,6 +140,40 @@ export async function showScientificDialog(
 			refresh();
 		}
 
+		function submitOption(index: number): void {
+			const option = options[index];
+			if (!option) return;
+			done({
+				answer: option.label,
+				value: option.value ?? option.label,
+				wasCustom: false,
+				index: index + 1,
+				resolution: normalizeResolution(option, params.recommendation),
+				confirmsContract: option.confirmsContract === true,
+			});
+		}
+
+		if (selectList) {
+			selectList.onSelect = (item) => {
+				if (item.value === customItemValue) {
+					enterEditMode();
+					return;
+				}
+				const index = Number.parseInt(item.value.slice("option:".length), 10);
+				if (Number.isInteger(index)) submitOption(index);
+			};
+			selectList.onCancel = () => done(null);
+		}
+
+		function scrollContext(direction: -1 | 1): void {
+			const maxScrollTop = Math.max(0, contextContentHeight - contextPageSize);
+			const pageStep = Math.max(1, contextPageSize - 1);
+			const next = Math.max(0, Math.min(maxScrollTop, contextScrollTop + direction * pageStep));
+			if (next === contextScrollTop) return;
+			contextScrollTop = next;
+			refresh();
+		}
+
 		function handleInput(data: string): void {
 			if (editMode) {
 				if (keybindings.matches(data, "tui.select.cancel")) {
@@ -120,138 +193,129 @@ export async function showScientificDialog(
 				return;
 			}
 
-			if (data === "e" || data === "E") {
-				evidenceExpanded = !evidenceExpanded;
-				refresh();
+			if (matchesKey(data, Key.pageUp)) {
+				scrollContext(-1);
 				return;
 			}
-			if (keybindings.matches(data, "tui.select.up")) {
-				selectedIndex = Math.max(0, selectedIndex - 1);
-				refresh();
+			if (matchesKey(data, Key.pageDown)) {
+				scrollContext(1);
 				return;
 			}
-			if (keybindings.matches(data, "tui.select.down")) {
-				selectedIndex = Math.min(Math.max(0, displayOptionCount - 1), selectedIndex + 1);
-				refresh();
-				return;
-			}
-			if (keybindings.matches(data, "tui.select.confirm")) {
-				if (allowCustom && selectedIndex === customOptionIndex) {
-					enterEditMode();
-					return;
-				}
-				const option = options[selectedIndex];
-				if (!option) return;
-				done({
-					answer: option.label,
-					value: option.value ?? option.label,
-					wasCustom: false,
-					index: selectedIndex + 1,
-					resolution: normalizeResolution(option, params.recommendation),
-					confirmsContract: option.confirmsContract === true,
-				});
-				return;
-			}
-			if (keybindings.matches(data, "tui.select.cancel")) done(null);
+			selectList?.handleInput(data);
+			refresh();
 		}
 
 		function render(width: number): string[] {
-			if (cachedLines && cachedWidth === width) return cachedLines;
+			const terminalHeight = Math.max(1, tui.terminal.rows);
+			if (cachedLines && cachedWidth === width && cachedHeight === terminalHeight) return cachedLines;
 
-			const lines: string[] = [];
 			const renderWidth = Math.max(1, width);
+			// Bounded card occupying the lower ~85% of the terminal, bottom-anchored:
+			// the question and options sit where pi's editor and streaming output
+			// live, and the tail of the transcript stays visible above the card.
+			// A fullscreen takeover anchored at the top reads like another block of
+			// transcript text and is easy to miss.
+			const maxDialogHeight = Math.min(
+				terminalHeight,
+				Math.max(16, Math.floor(terminalHeight * 0.85)),
+			);
 
-			function addWrapped(text: string, prefix = ""): void {
+			function addWrapped(target: string[], text: string, prefix = ""): void {
 				const prefixWidth = visibleWidth(prefix);
 				if (prefixWidth >= renderWidth) {
-					lines.push(...wrapTextWithAnsi(prefix + text, renderWidth));
+					target.push(...wrapTextWithAnsi(prefix + text, renderWidth));
 					return;
 				}
 				const contentWidth = Math.max(1, renderWidth - prefixWidth);
 				const wrapped = wrapTextWithAnsi(text, contentWidth);
 				const continuation = " ".repeat(prefixWidth);
-				for (let i = 0; i < wrapped.length; i++) lines.push(`${i === 0 ? prefix : continuation}${wrapped[i]}`);
-			}
-
-			lines.push(theme.fg("accent", "─".repeat(renderWidth)));
-			addWrapped(theme.fg("dim", `科学决策 · ${CATEGORY_LABELS[params.category]} · ${params.decisionId}`), " ");
-
-			// 1) The question leads, rendered prominently so it is never ambiguous.
-			lines.push("");
-			addWrapped(theme.fg("accent", theme.bold(params.question.trim())), theme.fg("accent", "❯ "));
-
-			// 2) The actionable recommendation comes next.
-			lines.push("");
-			addWrapped(theme.fg("success", theme.bold("推荐")), " ");
-			addWrapped(theme.fg("text", params.recommendation.label ?? params.recommendation.value), "   ");
-			addWrapped(theme.fg("muted", params.recommendation.rationale), "   ");
-			if (params.recommendation.conditions) addWrapped(theme.fg("dim", `适用条件：${params.recommendation.conditions}`), "   ");
-
-			// 3) Why it matters.
-			lines.push("");
-			addWrapped(theme.fg("muted", "为什么重要"), " ");
-			addWrapped(theme.fg("text", params.whyItMatters), "   ");
-
-			// 4) Supporting context, kept collapsed and grouped by provenance for readability.
-			if (params.briefing?.trim()) {
-				lines.push("");
-				addWrapped(theme.fg("muted", "背景"), " ");
-				addWrapped(theme.fg("text", params.briefing.trim()), "   ");
-			}
-
-			lines.push("");
-			const totalEvidence = params.evidence.length;
-			addWrapped(theme.fg("muted", `证据（${totalEvidence}）`), " ");
-			const limit = evidenceExpanded ? Number.POSITIVE_INFINITY : 3;
-			let shown = 0;
-			for (const group of groupEvidence(params.evidence)) {
-				if (shown >= limit) break;
-				addWrapped(theme.fg("toolTitle", EVIDENCE_SOURCE_LABELS[group.source]), "   ");
-				for (const item of group.items) {
-					if (shown >= limit) break;
-					const body = item.reference ? `${item.claim}（${item.reference}）` : item.claim;
-					addWrapped(theme.fg("text", body), theme.fg("accent", "     • "));
-					shown++;
+				for (let i = 0; i < wrapped.length; i++) {
+					target.push(`${i === 0 ? prefix : continuation}${wrapped[i]}`);
 				}
 			}
-			if (!evidenceExpanded && totalEvidence > shown) addWrapped(theme.fg("dim", `还有 ${totalEvidence - shown} 条证据 · 按 E 展开`), "   ");
-			else if (evidenceExpanded && totalEvidence > 3) addWrapped(theme.fg("dim", "按 E 收起"), "   ");
 
-			lines.push("");
-			addWrapped(theme.fg("muted", "请选择"), " ");
-
-			for (let i = 0; i < options.length; i++) {
-				const option = options[i];
-				const selected = !editMode && i === selectedIndex;
-				const recommended = option.recommended || (option.value ?? option.label) === params.recommendation.value;
-				const prefix = selected ? theme.fg("accent", "> ") : "  ";
-				const badge = recommended ? theme.fg("success", " [推荐]") : "";
-				addWrapped(theme.fg(selected ? "accent" : "text", `${i + 1}. ${option.label}`) + badge, prefix);
-				if (option.description) addWrapped(theme.fg("muted", option.description), "     ");
+			function rule(title: string, color: (text: string) => string): string {
+				const label = ` ${title.trim()} `;
+				const labelWidth = visibleWidth(label);
+				if (labelWidth >= renderWidth) {
+					return color(truncateToWidth(label.trim(), renderWidth, ""));
+				}
+				return color(`─${label}${"─".repeat(Math.max(0, renderWidth - labelWidth - 1))}`);
 			}
 
-			if (allowCustom) {
-				const selected = !editMode && selectedIndex === customOptionIndex;
-				const prefix = selected ? theme.fg("accent", "> ") : "  ";
-				addWrapped(theme.fg(selected || editMode ? "accent" : "text", `${customOptionIndex + 1}. 自定义答案${editMode ? " ✎" : ""}`), prefix);
+			// Pinned header: the question itself never scrolls out of view.
+			const headerLines: string[] = [];
+			addWrapped(headerLines, theme.fg("accent", theme.bold(params.question.trim())), theme.fg("accent", "❯ "));
+			headerLines.push("");
+
+			// Scrollable context: the recommended answer comes first so it is visible
+			// without scrolling; principles and briefing follow as supporting depth.
+			const contextLines: string[] = [];
+			addWrapped(contextLines, theme.fg("success", theme.bold("推荐")), " ");
+			addWrapped(contextLines, theme.fg("text", params.recommendation.label ?? params.recommendation.value), "   ");
+			addWrapped(contextLines, theme.fg("muted", params.recommendation.rationale), "   ");
+			if (params.recommendation.conditions) {
+				addWrapped(contextLines, theme.fg("dim", `适用条件：${params.recommendation.conditions}`), "   ");
 			}
 
+			if (params.principles?.trim()) {
+				contextLines.push("");
+				addWrapped(contextLines, theme.fg("muted", "原理"), " ");
+				addWrapped(contextLines, theme.fg("text", params.principles.trim()), "   ");
+			}
+
+			if (params.briefing?.trim()) {
+				contextLines.push("");
+				addWrapped(contextLines, theme.fg("muted", "背景"), " ");
+				addWrapped(contextLines, theme.fg("text", params.briefing.trim()), "   ");
+			}
+
+			const actionLines: string[] = [""];
 			if (editMode) {
-				lines.push("");
-				addWrapped(theme.fg("muted", "你的答案："), " ");
+				addWrapped(actionLines, theme.fg("muted", "你的答案："), " ");
 				const editorPrefix = renderWidth > 1 ? " " : "";
 				const editorWidth = Math.max(1, renderWidth - visibleWidth(editorPrefix));
-				for (const line of editor.render(editorWidth)) lines.push(`${editorPrefix}${line}`);
-				if (validationMessage) addWrapped(theme.fg("warning", validationMessage), " ");
+				for (const line of editor.render(editorWidth)) actionLines.push(`${editorPrefix}${line}`);
+				if (validationMessage) addWrapped(actionLines, theme.fg("warning", validationMessage), " ");
+			} else if (selectList) {
+				addWrapped(actionLines, theme.fg("muted", "请选择"), " ");
+				actionLines.push(...selectList.render(renderWidth));
 			}
 
-			lines.push("");
 			const help = editMode
 				? "Enter 提交 · Shift+Enter 换行 · Esc 返回/取消"
-				: "↑↓ 选择 · Enter 确认 · E 展开证据 · Esc 取消";
-			addWrapped(theme.fg("dim", help), " ");
-			lines.push(theme.fg("accent", "─".repeat(renderWidth)));
+				: "↑↓ 选择 · Enter 确认 · PgUp/PgDn 滚动详情 · Esc 取消";
+
+			const contextViewportHeight = Math.max(0, maxDialogHeight - actionLines.length - headerLines.length - 2);
+			contextContentHeight = contextLines.length;
+			let visibleContext: string[] = [];
+			if (contextViewportHeight > 0) {
+				const needsScroll = contextLines.length > contextViewportHeight;
+				contextPageSize = Math.max(1, contextViewportHeight - (needsScroll ? 1 : 0));
+				const maxScrollTop = Math.max(0, contextLines.length - contextPageSize);
+				contextScrollTop = Math.max(0, Math.min(contextScrollTop, maxScrollTop));
+				visibleContext = contextLines.slice(contextScrollTop, contextScrollTop + contextPageSize);
+				if (needsScroll) {
+					const first = contextScrollTop + 1;
+					const last = Math.min(contextLines.length, contextScrollTop + contextPageSize);
+					const up = contextScrollTop > 0 ? "↑" : " ";
+					const down = last < contextLines.length ? "↓" : " ";
+					visibleContext.push(theme.fg("dim", truncateToWidth(` ${up}${down} 详情 ${first}-${last}/${contextLines.length} · PgUp/PgDn`, renderWidth, "")));
+				}
+			} else {
+				contextPageSize = 1;
+				contextScrollTop = 0;
+			}
+
+			const lines = [
+				rule(`需要你的决策 · ${CATEGORY_LABELS[params.category]}`, (text) => theme.fg("accent", theme.bold(text))),
+				...headerLines,
+				...visibleContext,
+				...actionLines,
+				rule(help, (text) => theme.fg("dim", text)),
+			];
 			cachedWidth = width;
+			cachedHeight = terminalHeight;
 			cachedLines = lines;
 			return lines;
 		}
@@ -265,16 +329,29 @@ export async function showScientificDialog(
 				focused = value;
 				editor.focused = value && editMode;
 				cachedWidth = undefined;
+				cachedHeight = undefined;
 				cachedLines = undefined;
 			},
 			render,
 			invalidate: () => {
 				cachedWidth = undefined;
+				cachedHeight = undefined;
 				cachedLines = undefined;
 				editor.invalidate();
+				selectList?.invalidate();
 			},
 			handleInput,
 		};
+	}, {
+		overlay: true,
+		overlayOptions: {
+			// Bottom anchor: interaction happens in the lower screen area where
+			// pi's editor lives, not at the top edge where it is easily overlooked.
+			anchor: "bottom-left",
+			width: "100%",
+			maxHeight: "100%",
+			margin: 0,
+		},
 	});
 }
 
@@ -283,8 +360,7 @@ export async function showFallbackDialog(
 		question: string;
 		purpose: AskUserPurpose;
 		briefing?: string;
-		evidence?: EvidenceItem[];
-		whyItMatters?: string;
+		principles?: string;
 		recommendation?: ScientificRecommendation;
 		options?: AskUserOption[];
 		allowCustom?: boolean;

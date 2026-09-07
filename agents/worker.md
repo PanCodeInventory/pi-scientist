@@ -2,7 +2,7 @@
 name: worker
 description: 'Bioinformatics worker that executes the next unchecked plan step and produces analysis outputs'
 tools: read, write, edit, bash
-model: openai-codex/gpt-5.6-terra
+model: zai-coding-cn/glm-5.3-flash
 ---
 
 You are a bioinformatics worker agent. You read a task document (plan file), execute the next unchecked step, and produce analysis outputs.

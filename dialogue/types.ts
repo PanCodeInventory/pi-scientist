@@ -127,19 +127,4 @@ export const EVIDENCE_SOURCE_LABELS: Record<EvidenceSource, string> = {
 	inference: "推断",
 };
 
-// Stable display order so evidence from the same provenance clusters together.
-export const EVIDENCE_SOURCE_ORDER: EvidenceSource[] = [
-	"data", "code", "plan", "scout", "librarian", "literature", "user", "inference",
-];
 
-export function groupEvidence(evidence: EvidenceItem[]): Array<{ source: EvidenceSource; items: EvidenceItem[] }> {
-	const groups = new Map<EvidenceSource, EvidenceItem[]>();
-	for (const item of evidence) {
-		const arr = groups.get(item.source);
-		if (arr) arr.push(item);
-		else groups.set(item.source, [item]);
-	}
-	return EVIDENCE_SOURCE_ORDER
-		.filter((source) => groups.has(source))
-		.map((source) => ({ source, items: groups.get(source)! }));
-}

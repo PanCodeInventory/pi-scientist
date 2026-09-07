@@ -96,3 +96,41 @@ export function registerGenerateReportCommand(pi: ExtensionAPI): void {
 		},
 	});
 }
+
+export function registerPublicationCommand(pi: ExtensionAPI): void {
+	pi.registerCommand("publication", {
+		description: "Publication 模式（手动触发）：把已完成分析的输出整合为一图一 Jupyter Notebook，相对路径、单一图片导出，不走 Plan-Implement 链路",
+		async handler(args, _ctx) {
+			const extra = (args ?? "").trim();
+			const prompt = [
+				"## Publication 模式启动 / Publication Mode Activated",
+				"",
+				"用户手动触发了 Publication 模式。读取并遵循 `publication` skill。这是成图整理，不是新分析。",
+				"",
+				"### 硬性规则",
+				"- 不走 Plan-Implement 链路：不要创建 `Task/TaskN-*.md`，不要调用 `sci_implement` / `sci_review`，不要派发 worker/reviewer 子代理。",
+				"- 主代理直接用 `write` 工具（nbformat 4 JSON）或 `jupytext` 写 notebook。",
+				"- 输出位置：分析父目录下的顶层 `Publication/` 文件夹（与 `Task/`、`<NN>_ModuleName/` 平级）。",
+				"- 一图一 notebook：`Publication/FigureN_<short>.ipynb`（或 `Publication/FigureN_<short>/FigureN.ipynb` 配 `exports/` 子目录）。",
+				"- 只用相对路径引用既有分析输出（如 `../02_Clustering/results/data/02_clustered.h5ad`）；绝不复制或内嵌大数据；小型论文级元数据（细胞类型配色、基因列表、分组顺序）可作为显式 cell 写入。",
+				"- 每个 notebook 只导出**单一图片**，不做 panel 组合（用户自行拼版）。导出 PDF（矢量）+ PNG 300dpi，遵循 `skills/visualization/shared/figure-standards.md`，禁止 JPEG。",
+				"- 一个 notebook 一个内核（Python 或 R），按绘图库选择。",
+				"- 每个 notebook 必须能 Restart & Run All 从头复现。",
+				"",
+				"### 流程",
+				"1. 用 `sci_scout` 轻量盘点既有分析输出（哪些模块、哪些 h5ad/表/图、用了什么参数）。",
+				"2. 把盘点结果告诉用户。用 `ask_user_question`（每轮一个问题）只问那些数据无法回答、且会影响成图的选择：期刊/栏宽/格式/配色/要出哪几张图、各自数据源。不要制造不影响 notebook 的问题。",
+				"3. 创建 `Publication/`，逐个写出 notebook：首个 cell 为参数 cell；每个绘图 cell 顶部注释标注来源模块/脚本/步骤；末 cell 按 figure-standards 尺寸/DPI 导出单一图片。",
+				"4. 逐个 Run All（inline 或 `jupyter nbconvert --execute --inplace`）确认复现，把导出图片路径告知用户。",
+				"5. 不要 git commit、不要建 Task 计划/README/Report。总结产出并停止。",
+				"",
+				"### 边界",
+				"Publication 模式不重新分析、不计算新统计、不生成 `Report/`、不建 `Task/`、不派子代理。若某图需要新计算，说明这是 CONTINUE/NEW——停止 Publication 模式并告知用户。",
+				...(extra ? ["", "### 用户本次补充指示", extra] : []),
+				"",
+				"现在开始：先读取 `publication` skill，再轻量盘点既有分析输出，然后与用户确认要出哪几张图及其数据源。",
+			].join("\n");
+			pi.sendUserMessage(prompt);
+		},
+	});
+}
