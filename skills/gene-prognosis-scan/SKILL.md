@@ -24,9 +24,9 @@ The main agent normally inspects the gene list and existing outputs, executes th
 
 Use known constraints without asking again. Clarify unresolved scientific choices that would change the result: species/ortholog policy, cancer scope, survival endpoint, contrasts/cutoffs, covariates, and exploratory versus confirmatory intent. Keep a short checklist for a multi-phase scan; a persistent plan is optional for a long project.
 
-Use specialist tools only when helpful: `sci_scout` for focused inspection, `sci_librarian` for a concrete external-evidence gap, `sci_implement` for a bounded execution task (worker only, no automatic review), or `sci_review` for read-only scrutiny. The executor records progress and validation; no specialist call is a prerequisite.
+When collaboration is useful, assign bounded inspection, retrieval, execution or review tasks through the available collaboration channel. Collect actual outputs and validation evidence before using results. Review is optional.
 
-When retrieval is useful, give `sci_librarian` a focused question with the gene symbols, cancer types, phenotype, and desired evidence type. Keep computation and result validation with the executor rather than treating them as literature retrieval.
+When retrieval is useful, provide a focused retrieval question with the gene symbols, cancer types, phenotype, and desired evidence type. Keep computation and result validation with the executor rather than treating them as literature retrieval.
 
 ## Critical Rules (learned from production failures)
 

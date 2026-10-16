@@ -19,8 +19,7 @@
     "index.ts",
     "core/**/*.ts",
     "dialogue/**/*.ts",
-    "tools/**/*.ts",
-    "agents/**/*.md"
+    "tools/**/*.ts"
   ],
   "exclude": [
     "dist",

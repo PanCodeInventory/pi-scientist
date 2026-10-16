@@ -27,5 +27,5 @@ The BasicViz and ggplot2 branches reuse `theme_elegant()` from `r-pipeline/scrip
 ## Done — when the figure meets all three
 
 1. Every plot in the figure is produced by a function/pattern named in the branch's reference — no ad-hoc plotting code.
-2. It passes all 32 standards in `figure-standards.md` (the Pre-submission Checklist is the minimum).
+2. It passes all 32 standards in `figure-standards.md` (the Pre-submission Checklist is the minimum). Without visual capability, use its bundled programmatic QC mode and report **visual review pending**, not fully accepted.
 3. It uses the branch's theme — `theme_elegant()` for BasicViz/ggplot2, scplotter's own theming for scplotter — no bespoke theme.

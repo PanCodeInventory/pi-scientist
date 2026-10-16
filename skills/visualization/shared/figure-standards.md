@@ -60,6 +60,35 @@ This file is the ONLY authority for figure quality in this workflow. Every figur
 31. 🟡 Figure title is a noun phrase (e.g. "MASH vs Control").
 32. 🟡 NO annotation text inside the plot area. "Annotation text" = data-point labels, gene names, numeric values, p-values, arrow callouts, and similar ADD-ON text. Axis labels, ticks, title, and legend are STRUCTURAL text and are retained.
 
+## Programmatic QC when visual inspection is unavailable
+
+All 32 standards still apply. A text-only agent may report **technical QC passed;
+visual review pending**, never “all standards passed” or pretend to have inspected a figure.
+Ask a visual-capable reviewer/user to check layout, legibility and scientific meaning
+before final acceptance. Do not silently weaken the rules or block useful technical work.
+
+Use the bundled helper (Python + Pillow, Poppler `pdfinfo`/`pdffonts`; conversion also
+needs `pdftoppm`/`pdfseparate`):
+
+```bash
+# Convert PDF output and check the resulting pairs; default rendering is 400 DPI.
+python <visualization-skill>/shared/figure_qc.py --render path/to/figure.pdf
+# Check existing pairs without modifying them:
+python <visualization-skill>/shared/figure_qc.py path/to/figure.pdf > path/to/figure-qc.json
+```
+
+Pass the explicit PDFs produced by this run. Multi-page PDFs retain their original and
+produce `<stem>-page-N.pdf` + `<stem>-page-N.png` pairs. `--render` explicitly replaces
+derived files; it does not improve the effective resolution of embedded raster content.
+The checker verifies PDF readability/page count, paired PNG decoding, DPI metadata,
+absence of transparency, nonblank pixels and PDF font embedding. Missing tools/check
+failures return nonzero. PNG metadata is parsed by Pillow, not a fixed byte-offset guess.
+
+The JSON is evidence of **only those checks**. Nonblank pixels do not prove labels are
+readable; metadata DPI does not prove effective resolution; font embedding does not
+prove correct typography. List remaining visual checks and any code-level checks
+performed (palette/axis-label parameters, etc.) separately. No automatic visual approval.
+
 ## Pre-submission Checklist
 
 - [ ] Saved as BOTH `.png` (300 DPI) and `.pdf`

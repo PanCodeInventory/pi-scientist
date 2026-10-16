@@ -7,10 +7,38 @@ library(yaml)
 library(grid)
 # NOTE: reticulate is NOT loaded globally to prevent early initialization
 
-# --- 1. Python Environment Setup ---
+# --- 1. Dependency Check ---
+# Fails fast with actionable install commands. Required = used by every pipeline path
+# except 'ggrastr', which plot_umap() degrades gracefully without.
+check_r_packages <- function() {
+    required <- c("ggplot2", "dplyr", "tibble", "tidyr", "scales", "yaml",
+                  "ggsci", "RColorBrewer", "reticulate", "anndata",
+                  "cowplot", "ggalluvial")
+    optional  <- c("ggrastr")
+
+    missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(missing) > 0) {
+        stop(
+            "Missing required R packages: ", paste(missing, collapse = ", "), "\n",
+            "Install with:\n",
+            "  Rscript -e 'install.packages(c(\"", paste(missing, collapse = "\", \""), "\"))'\n",
+            "('anndata' is the CRAN wrapper around Python anndata via reticulate.)",
+            call. = FALSE
+        )
+    }
+    missing_opt <- optional[!vapply(optional, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(missing_opt) > 0) {
+        message("Optional packages not installed (features degrade gracefully): ",
+                paste(missing_opt, collapse = ", "))
+    }
+    invisible(TRUE)
+}
+
+# --- 2. Python Environment Setup ---
 setup_python <- function() {
     if (!requireNamespace("reticulate", quietly = TRUE)) {
-        stop("Package 'reticulate' is required but not installed.")
+        stop("Package 'reticulate' is required but not installed. ",
+             "Run: install.packages('reticulate')")
     }
     library(reticulate)
 

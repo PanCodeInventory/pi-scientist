@@ -5,7 +5,7 @@ description: Optional planning for multi-step bioinformatics work and long-runni
 
 # Bioinformatics Analysis Planning
 
-Plan only as much as the work needs. The main agent coordinates the analysis, delegates substantial execution to workers, and accepts results after checking evidence. Workers self-check; independent review is selected by the main agent when warranted. Answer ordinary questions directly; do not turn them into an analysis workflow.
+Plan only as much as the work needs. The coordinator maintains the overall analysis; execution can be direct or collaborative. Each contributor checks actual outputs, and independent review is used when warranted. Answer ordinary questions directly; do not turn them into an analysis workflow.
 
 ## Choose the Smallest Useful Plan
 
@@ -51,39 +51,32 @@ The following deliverable layout is required for analysis modules, even without 
 
 `Task/` stores plan Markdown only; generated analysis artifacts MUST stay outside it. New modules use the next available `<NN>_ModuleName/` prefix and the fixed `scripts/` and `results/` structure above. Per-cell-type subfolders belong inside `results/data/`, `results/tables/`, or `results/plots/`, not directly under `results/`.
 
-Do not create module README files, `99_Report/`, `RFINAL`, or analysis `logs/` directories. The analysis root `logs/` is runner-only; do not create or repurpose it. Tmux logs, status files, and run history belong under `<Module>/tmux/`, with the wrapper under `<Module>/scripts/utils/`. Ordinary questions need no filesystem scaffolding.
+Do not create module README files, `99_Report/`, `RFINAL`, or analysis `logs/` directories. Tmux logs, status files, and run history belong under `<Module>/tmux/`, with the wrapper under `<Module>/scripts/utils/`. Ordinary questions need no filesystem scaffolding.
 
 When creating a Task file, record the analysis root, goal, inputs/dependencies, checklist, outputs, and success criteria. Use the next unused Task number and today's date; retain prior plans when starting a distinct project increment. Add step details, method rationale, versions, and parameter choices only at the level needed to reproduce the work. Refer to relevant skills by name or valid path.
 
 ## Execute, Validate, Update
 
-The main agent as coordinating executor updates checklist progress and records output paths, actual checks, failures, and blockers. Workers return evidence through sci_handoff; they do not edit the shared plan in team assignments. Mark a step complete after its required outputs and scientific checks pass, not merely because a command exited. Update the plan when findings require a change; clarify changes to consequential scientific choices with the user.
+The coordinating executor updates checklist progress and records output paths, actual checks, failures, and blockers. Contributors return evidence through the available collaboration channel; keep one owner for the shared plan. Mark a step complete after its required outputs and scientific checks pass, not merely because a command exited. Update the plan when findings require a change; clarify changes to consequential scientific choices with the user.
 
 Use [tmux-runner](../tmux-runner/SKILL.md) for long-running jobs when appropriate, even without a plan. Record commands, environment, logs, exit status, and expected artifacts. Estimated runtime and `**Long-running**: yes` are useful optional step fields.
 
-## Team Execution
+Launch is not completion: dependent stages wait for the current run's successful status
+and validated outputs (`--wait`, or a sequential chain script for very long work).
+State the rerun contract when relevant: fixed inputs, whether own outputs are acceptable
+inputs, overwrite/resume boundaries. Do not require all stages to be idempotent.
+Before a stage starts, check configured module/input paths against actual directories
+and table ID columns/types against upstream outputs. Keep revision progress in one
+existing authoritative plan/checklist and link to it elsewhere; no extra snapshot service.
 
-Use sci_dispatch for substantial analysis execution. Include established cwd, role,
-inputs, confirmed decisions, writeScopes, acceptance criteria and dependencies.
-Queue dependent tasks with start=false; launch through sci_tasks start only after
-the main agent accepts their upstream tasks. A dispatch result is a task ID, not
-completed analysis. Keep machine state in .scientist/ and analysis outputs in modules.
+## Collaborative Work
 
-Workers self-check and report submitted, waiting_compute, blocked or failed through
-sci_handoff. The main agent inspects evidence and uses sci_tasks accept to release
-downstream work. For corrections or completed calculations, use sci_tasks resume
-with concrete instructions; inspect registered jobs before recomputing. Previous
-attempts and native sessions remain available for provenance.
-
-Scout and librarian are on-demand roles. Reviewer is optional and selected for
-complex designs, anomalies, central claims or the user's request; it may review
-before or after execution. There is no automatic worker-to-reviewer chain.
-
-Herdr manages expert sessions; tmux-runner manages long analysis jobs. A tmux expert
-backend is available outside Herdr. The coordinator receives change notifications
-while its Pi session is active; when restarting, inspect sci_tasks before dispatching.
-See [team architecture](../../docs/team-architecture.md) for recovery boundaries.
-The old sci_implement/sci_review/sci_scout/sci_librarian tools remain one-shot helpers.
+When collaboration helps, assign a bounded objective, relevant context and inputs,
+write scope, and completion criteria. Identify dependencies and reuse checked
+upstream results. Record findings and evidence in the available collaboration
+channel; the plan does not prescribe agent identities, tools, or session lifetimes.
+Keep final project acceptance with the coordinator. Inspect existing work and
+running calculations before continuing or replacing an executor.
 
 ## Completion and Reports
 

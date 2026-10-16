@@ -1,20 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { Check } from 'typebox/value';
 import scientist from '../dist/index.js';
-import { registerImplementTool } from '../dist/tools/implement.js';
-import { registerReviewTool } from '../dist/tools/review.js';
-import { registerScoutTool } from '../dist/tools/scout.js';
 import { registerScientificDialogue } from '../dist/dialogue/index.js';
 import { buildDecisionLog, prepareQuestionArguments } from '../dist/dialogue/contract.js';
 import { showScientificDialog, showFallbackDialog } from '../dist/dialogue/ui.js';
-import { discoverScientists } from '../dist/core/agents.js';
-import { FIGURE_STANDARDS_PATH, SCIENTIST_CONVENTIONS } from '../dist/core/conventions.js';
+import os from 'node:os';
+import { diffAgents, parseAgentList, registerHerdrWatch } from '../dist/core/herdr-watch.js';
+import path from 'node:path';
+import { SCIENTIST_CONVENTIONS, injectScientistConventions } from '../dist/core/conventions.js';
 import { SCIENTIST_ENFORCEMENT, injectScientistPrinciples } from '../dist/core/enforcement.js';
-import { agentToolResult } from '../dist/tools/shared.js';
 
 function harness() {
   const tools = new Map(), commands = new Map(), hooks = new Map(), messages = [];
@@ -24,14 +20,9 @@ function harness() {
     on: (name, fn) => { const callbacks = hooks.get(name) ?? []; callbacks.push(fn); hooks.set(name, callbacks); },
     setActiveTools() { throw new Error('Must not override user tool selection'); },
     sendUserMessage: (...args) => messages.push(args),
+    sendMessage: (...args) => messages.push(['__sendMessage__', ...args]),
   };
   return { api, tools, commands, hooks, messages };
-}
-const usage = { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, cost: 0.01, contextTokens: 16, turns: 1 };
-const modelUsage = { input: 10, output: 4, cacheRead: 2, cacheWrite: 0, totalTokens: 16, cost: { input: 0.006, output: 0.004, cacheRead: 0, cacheWrite: 0, total: 0.01 } };
-function result(agent = 'worker', text = 'Completed and verified.', overrides = {}) {
-  return { agent, agentSource: 'user', task: 'task', exitCode: 0, stderr: '', usage, modelUsage,
-    messages: [{ role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop' }], ...overrides };
 }
 const context = { cwd: process.cwd(), mode: 'rpc', hasUI: true, ui: {} };
 const execute = (tool, params, ctx = context, signal = new AbortController().signal) => tool.execute('test', params, signal, undefined, ctx);
@@ -39,27 +30,21 @@ const execute = (tool, params, ctx = context, signal = new AbortController().sig
 // No calls to a model or external service are made by this suite.
 test('extension preserves tool selection and separates conventions from strategy', async () => {
   const h = harness(); scientist(h.api);
-  assert.deepEqual([...h.tools.keys()].sort(), ['ask_user_question', 'sci_dispatch', 'sci_implement', 'sci_librarian', 'sci_logs', 'sci_review', 'sci_scout', 'sci_tasks']);
+  assert.deepEqual([...h.tools.keys()].sort(), ['ask_user_question', 'sci_logs']);
+  assert.deepEqual([...h.commands.keys()].sort(), ['generate-report', 'publication', 'reflect', 'science-contract']);
   const [hook] = h.hooks.get('before_agent_start');
   const out = await hook({ systemPrompt: 'base' }, { hasUI: false });
   assert.match(out.systemPrompt, /<scientist-conventions>/);
   assert.match(out.systemPrompt, /<scientist-principles>/);
+  assert.match(out.systemPrompt, /linear imperative research scripting/);
+  const repeated = await hook({ systemPrompt: out.systemPrompt }, { hasUI: false });
+  assert.equal(repeated.systemPrompt, out.systemPrompt);
   assert.doesNotMatch(out.systemPrompt, /<scientific-contract-state>|<scientist-enforcement>/);
   assert.equal(h.hooks.has('tool_call'), false);
   assert.equal(h.hooks.has('turn_start'), false);
   const resources = await h.hooks.get('resources_discover')[0]();
   assert.ok(fs.existsSync(resources.skillPaths[0]));
-  assert.ok(fs.existsSync(FIGURE_STANDARDS_PATH));
-});
-
-test('child extension registers skills but no orchestration tools or dialogue hooks', () => {
-  const prior = process.env.SCIENTIST_SUBAGENT;
-  process.env.SCIENTIST_SUBAGENT = '1';
-  try {
-    const h = harness(); scientist(h.api);
-    assert.equal(h.tools.size, 0); assert.equal(h.commands.size, 0);
-    assert.deepEqual([...h.hooks.keys()], ['resources_discover']);
-  } finally { if (prior === undefined) delete process.env.SCIENTIST_SUBAGENT; else process.env.SCIENTIST_SUBAGENT = prior; }
+  assert.ok(fs.existsSync(path.join(process.cwd(), 'skills/visualization/shared/figure-standards.md')));
 });
 
 test('legacy no-enforcement flag skips strategy, not user conventions', async () => {
@@ -69,96 +54,82 @@ test('legacy no-enforcement flag skips strategy, not user conventions', async ()
     const h = harness(); scientist(h.api);
     const out = await h.hooks.get('before_agent_start')[0]({ systemPrompt: 'base' }, { hasUI: false });
     assert.match(out.systemPrompt, /<scientist-conventions>/);
+    assert.match(out.systemPrompt, /linear imperative research scripting/);
     assert.doesNotMatch(out.systemPrompt, /<scientist-principles>/);
   } finally { if (prior === undefined) delete process.env.SCIENTIST_NO_ENFORCEMENT; else process.env.SCIENTIST_NO_ENFORCEMENT = prior; }
+});
+
+test('coding preferences are shared, compact, correctness-preserving and injected once', () => {
+  const once = injectScientistConventions('base');
+  assert.equal(injectScientistConventions(once), once);
+  assert.equal(once, 'base' + SCIENTIST_CONVENTIONS);
+  for (const required of ['linear imperative research scripting', 'Stata do-file', 'top to bottom',
+    'function\n  wrappers, abstraction layers, loops', 'scientific correctness and data integrity',
+    'column selections, merge, rename', 'read_excel', 'one line', 'nested logic',
+    'Black/PEP 8-style forced multiline expansion', 'code examples in responses',
+    'unless the user explicitly requests a different convention']) {
+    assert.ok(SCIENTIST_CONVENTIONS.includes(required), required);
+  }
 });
 
 test('principles injection is idempotent and much smaller than old protocol', () => {
   const once = injectScientistPrinciples('base');
   assert.equal(injectScientistPrinciples(once), once);
   assert.ok(SCIENTIST_ENFORCEMENT.length < 4000);
-  for (const required of ['scripts/stages/', 'scripts/config/', 'results/plots/', 'README.md', 'manifest.jsonl', 'Publication/', 'PNG', 'PDF']) {
+  for (const required of ['scripts/stages/', 'scripts/config/', 'results/plots/', 'README.md', 'manifest.jsonl', 'Publication/', 'visualization skill']) {
     assert.ok(SCIENTIST_CONVENTIONS.includes(required), required);
   }
 });
 
-test('every specialist receives conventions; reviewer has no write/edit tool', () => {
-  const { agents } = discoverScientists();
-  assert.equal(agents.length, 4);
-  for (const agent of agents) assert.match(agent.systemPrompt, /<scientist-conventions>/);
-  const reviewer = agents.find(a => a.name === 'reviewer');
-  assert.ok(!reviewer.tools.includes('write')); assert.ok(!reviewer.tools.includes('edit'));
-  assert.match(reviewer.systemPrompt, /Do not edit files/);
+test('herdr watch parses all named agents, ignores unnamed ones and tolerates garbage', () => {
+  const out = JSON.stringify({ result: { agents: [
+    { name: 'atlas-build', agent_status: 'working' },
+    { name: 'atlas-review', agent_status: 'idle' },
+    { agent: 'pi', agent_status: 'idle' },                 // unnamed: user-driven, not watched
+    { name: 'nostatus' },
+  ] } });
+  const parsed = parseAgentList(out);
+  assert.equal(parsed.get('atlas-build'), 'working');
+  assert.equal(parsed.get('atlas-review'), 'idle');
+  assert.equal(parsed.size, 2);
+  assert.equal(parseAgentList('not json').size, 0);
+  assert.equal(parseAgentList('{"error":{"code":"x"}}').size, 0);
 });
 
-test('implement starts exactly one worker without requiring a plan or review', async () => {
-  const h = harness(), calls = [];
-  registerImplementTool(h.api, async (...args) => { calls.push(args); return result(); });
-  const out = await execute(h.tools.get('sci_implement'), { task: 'Inspect input and create 01_Test/results/tables/out.tsv' });
-  assert.equal(calls.length, 1); assert.equal(calls[0][2], 'worker');
-  assert.match(calls[0][3], /No persistent plan is required/);
-  assert.match(calls[0][3], /no automatic reviewer/);
-  assert.equal(out.usage, modelUsage);
+test('herdr watch diffs settled/blocked/gone transitions without first-sight or duplicate noise', () => {
+  const prev = new Map([['sci-a', 'working'], ['sci-b', 'idle'], ['sci-c', 'working']]);
+  const next = new Map([['sci-a', 'idle'], ['sci-b', 'working'], ['sci-d', 'idle']]);
+  const events = diffAgents(prev, next);
+  assert.deepEqual(events, [{ name: 'sci-a', status: 'idle', previous: 'working' }, { name: 'sci-c', status: 'gone', previous: 'working' }]);
+  // done/idle are one bucket: no repeat wake-up
+  assert.deepEqual(diffAgents(new Map([['sci-a', 'idle']]), new Map([['sci-a', 'done']])), []);
+  assert.deepEqual(diffAgents(new Map([['sci-a', 'working']]), new Map([['sci-a', 'blocked']])), [{ name: 'sci-a', status: 'blocked', previous: 'working' }]);
 });
 
-test('optional legacy plan path resolves against cwd and is not mutated by the tool', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scientist-plan-test-'));
-  const file = path.join(dir, 'plan.md'), original = '## Todolist\n- [ ] P01: test\n'; fs.writeFileSync(file, original);
+test('herdr watch notifies exact transitions and stays inert without HERDR_ENV', async () => {
+  const prior = process.env.HERDR_ENV;
+  delete process.env.HERDR_ENV;
+  assert.equal(registerHerdrWatch(harness().api), undefined);
+  process.env.HERDR_ENV = '1';
   try {
-    const h = harness(), calls = [];
-    registerImplementTool(h.api, async (...args) => { calls.push(args); return result(); });
-    await execute(h.tools.get('sci_implement'), { planFile: '@plan.md', cwd: dir });
-    assert.match(calls[0][3], /next unchecked step only/);
-    assert.ok(calls[0][3].includes(file));
-    assert.equal(calls[0][4].workDir, dir);
-    assert.equal(fs.readFileSync(file, 'utf8'), original);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('empty delegation and invalid plan fail before spawning', async () => {
-  const h = harness(); let calls = 0;
-  registerImplementTool(h.api, async () => { calls++; return result(); });
-  const tool = h.tools.get('sci_implement');
-  await assert.rejects(execute(tool, {}), /Provide a task/);
-  await assert.rejects(execute(tool, { task: '   ' }), /Provide a task/);
-  await assert.rejects(execute(tool, { planFile: '/nonexistent/scientist/plan.md' }), /Plan file not found/);
-  assert.equal(calls, 0);
-});
-
-test('review works without a plan and never advances a checklist', async () => {
-  const h = harness(), calls = [];
-  registerReviewTool(h.api, async (...args) => { calls.push(args); return result('reviewer', 'NEEDS FIX: wrong experimental unit'); });
-  const out = await execute(h.tools.get('sci_review'), { task: 'Review donor pairing in 03_DE/scripts/stages/de.py' });
-  assert.equal(calls.length, 1); assert.equal(calls[0][2], 'reviewer');
-  assert.match(calls[0][3], /Do not edit files, update checkboxes/);
-  assert.match(out.content[0].text, /NEEDS FIX/);
-  assert.doesNotMatch(out.content[0].text, /All Todolist items/);
-});
-
-test('scout receives the requested depth and runtime limit', async () => {
-  const h = harness(), calls = [];
-  registerScoutTool(h.api, async (...args) => { calls.push(args); return result('scout'); });
-  await execute(h.tools.get('sci_scout'), { task: 'Read metadata', thoroughness: 'quick', timeoutSeconds: 30 });
-  assert.match(calls[0][3], /Inspection depth: quick/);
-  assert.equal(calls[0][4].timeoutSeconds, 30);
-});
-
-test('subprocess failures, truncated completions and declared blocking are not successes', () => {
-  for (const stopReason of ['error', 'aborted', 'length', 'toolUse']) assert.throws(() => agentToolResult(result('worker', 'partial', { stopReason })));
-  assert.throws(() => agentToolResult(result('worker', '', { exitCode: 1, stderr: 'failed' })), /failed/);
-  assert.throws(() => agentToolResult(result('worker', '## ANALYSIS TERMINATED\nMissing input')));
-  assert.throws(() => agentToolResult(result('worker', 'BLOCKED: missing donor IDs')));
-  assert.doesNotThrow(() => agentToolResult(result('reviewer', 'NEEDS FIX: design problem')));
-});
-
-test('only final assistant text is returned; large output is bounded with a full-text path', () => {
-  const data = result('worker', 'x'.repeat(60000));
-  data.messages.unshift({ role: 'assistant', content: [{ type: 'text', text: 'intermediate history' }] });
-  const out = agentToolResult(data), text = out.content[0].text;
-  assert.ok(text.length < 52000); assert.doesNotMatch(text, /intermediate history/);
-  const file = text.match(/Full output: (.+)\]/)[1];
-  try { assert.equal(fs.readFileSync(file, 'utf8').length, 60000); }
-  finally { fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
+    const h = harness();
+    const outputs = [
+      JSON.stringify({ result: { agents: [{ name: 'sci-x', agent_status: 'working' }] } }),
+      JSON.stringify({ result: { agents: [{ name: 'sci-x', agent_status: 'idle' }] } }),
+      JSON.stringify({ result: { agents: [] } }),
+      'not json',
+    ];
+    let i = 0;
+    const w = registerHerdrWatch(h.api, { run: async () => outputs[Math.min(i++, outputs.length - 1)], cwd: () => '/nonexistent' });
+    assert.ok(w);
+    await w.poll(); assert.equal(h.messages.length, 0);          // baseline, first sight is silent
+    await w.poll(); assert.equal(h.messages.length, 1);          // working -> idle
+    assert.match(h.messages.at(-1)[1].content, /sci-x: idle/);
+    await w.poll(); assert.equal(h.messages.length, 2);          // gone
+    assert.match(h.messages.at(-1)[1].content, /sci-x 已消失/);
+    await w.poll(); assert.equal(h.messages.length, 2);          // CLI failure: no noise
+    w.stop();
+  } finally { if (prior === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = prior; }
 });
 
 test('question schema accepts only a question, without a contract ceremony', () => {
@@ -226,7 +197,7 @@ test('report and publication commands do not require a new Task or invoke a pipe
   assert.equal(options.deliverAs, 'followUp');
   await h.commands.get('publication').handler('Figure 1', context);
   assert.match(h.messages.at(-1)[0], /一图一 notebook/);
-  assert.match(h.messages.at(-1)[0], /无需 Task、Scout/);
+  assert.match(h.messages.at(-1)[0], /无需 Task 或固定/);
 });
 
 test('TUI question overlay renders without recommendation and cleans up on abort', async () => {
@@ -243,4 +214,54 @@ test('TUI question overlay renders without recommendation and cleans up on abort
   }) } };
   const selection = await showScientificDialog({ question: 'Which contrast?', options: [{ label: 'A vs B' }] }, ctx, abort.signal);
   assert.equal(selection, null); component.dispose();
+});
+
+test('actual Pi SDK loads the extension and preserves conversation identity without model calls', async () => {
+  const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, AuthStorage } = await import('@earendil-works/pi-coding-agent');
+  for (const tools of [undefined, ['read']]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sci-sdk-test-'));
+    const settingsManager = SettingsManager.inMemory(), native = SessionManager.inMemory(root);
+    const loader = new DefaultResourceLoader({ cwd: root, agentDir: path.join(root, 'agent'), settingsManager, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [scientist] });
+    let session;
+    try {
+      await loader.reload();
+      ({ session } = await createAgentSession({ cwd: root, agentDir: path.join(root, 'agent'), resourceLoader: loader, settingsManager, authStorage: AuthStorage.inMemory(), sessionManager: native, tools }));
+      await session.bindExtensions({ onError: error => assert.fail(JSON.stringify(error)) });
+      const id = session.sessionId, model = session.model;
+      await session.sendCustomMessage({ customType: 'fixture-history', content: 'Known prior design decision', display: false });
+      assert.ok(session.messages.some(m => m.customType === 'fixture-history'));
+      for (const removed of ['sci_dispatch', 'sci_tasks', 'sci_sessions', 'sci_handoff']) assert.ok(!session.getActiveToolNames().includes(removed), removed);
+      for (const kept of ['sci_logs', 'ask_user_question']) if (!tools || tools.includes(kept)) assert.ok(session.getActiveToolNames().includes(kept) || tools, kept);
+      assert.equal(session.sessionId, id); assert.equal(session.model, model);
+      if (tools) assert.deepEqual(session.getActiveToolNames(), ['read']);
+    } finally {
+      if (session) { await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' }); session.dispose(); }
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('actual Pi preserves tool filters and history across reload without mode machinery', async () => {
+  const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, AuthStorage } = await import('@earendil-works/pi-coding-agent');
+  for (const { tools, excludeTools } of [{}, { tools: ['read'] }, { excludeTools: ['sci_logs'] }]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sci-mode-test-'));
+    const settingsManager = SettingsManager.inMemory(), native = SessionManager.inMemory(root);
+    const loader = new DefaultResourceLoader({ cwd: root, agentDir: path.join(root, 'agent'), settingsManager, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [scientist] });
+    let session;
+    try {
+      await loader.reload();
+      ({ session } = await createAgentSession({ cwd: root, agentDir: path.join(root, 'agent'), resourceLoader: loader, settingsManager, authStorage: AuthStorage.inMemory(), sessionManager: native, tools, excludeTools }));
+      await session.bindExtensions({ onError: error => assert.fail(JSON.stringify(error)) });
+      const id = session.sessionId, model = session.model, originalTools = session.getActiveToolNames();
+      await session.sendCustomMessage({ customType: 'fixture-history', content: 'Keep this analysis decision', display: false });
+      assert.equal(session.getActiveToolNames().includes('sci_logs'), (!tools || tools.includes('sci_logs')) && !excludeTools?.includes('sci_logs'));
+      await session.reload();
+      assert.deepEqual(session.getActiveToolNames().sort(), originalTools.sort());
+      assert.equal(session.sessionId, id); assert.equal(session.model, model);
+      assert.ok(session.messages.some(m => m.customType === 'fixture-history'));
+    } finally {
+      if (session) { await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' }); session.dispose(); }
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
 });

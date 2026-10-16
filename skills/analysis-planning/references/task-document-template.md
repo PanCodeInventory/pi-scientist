@@ -25,18 +25,19 @@ Analysis modules use `<NN>_ModuleName/` with `scripts/stages/`, `scripts/config/
 - [ ] **P01**: [Action and expected result]
 - [ ] **P02**: [Action and expected result]
 
-The main agent updates progress after validating worker evidence, with evidence and blockers below. Add or revise steps as needed; independent review is optional and read-only.
+The main agent updates progress after validating contributor evidence, with evidence and blockers below. Add or revise steps as needed; independent review is optional and read-only.
 
 ## Step Details (Only Where Useful)
 
 ### P01: [Title]
 
-- **Input**: [paths and prerequisite outputs]
+- **Input**: [paths and prerequisite outputs; completion/content checks before starting, not merely launch order]
 - **Method**: [method, key parameters, rationale; relevant skill/reference]
 - **Module**: `<NN>_ModuleName/`
 - **Execution**: [script under `scripts/stages/`, configuration under `scripts/config/`, helpers under `scripts/utils/`; command and environment]
 - **Output**: [concrete paths under the module's `results/data/`, `results/tables/`, and `results/plots/`]
-- **Validation**: [artifact integrity and scientific/statistical checks]
+- **Validation**: [artifact integrity and scientific/statistical checks; actual module/config paths; table ID columns, types and alignment]
+- **Rerun contract**: [safe to rerun from fixed inputs? accepts own output? overwrite/resume boundaries; omit if irrelevant]
 - **Runtime**: [estimate; tmux/log paths if useful]
 - **Result / blocker**: [actual outcome, evidence, and any unresolved issue]
 
@@ -58,11 +59,11 @@ The main agent updates progress after validating worker evidence, with evidence 
 - [ ] Outputs follow the fixed module layout; original data and prior results protected
 - [ ] Data semantics and sample/group alignment validated
 - [ ] Statistical design, tests, and reporting appropriate to the question
-- [ ] Figures checked visually and conclusions supported by the results
+- [ ] Figures checked visually and conclusions supported by the results; if only programmatic QC was possible, record visual review as pending
 - [ ] Uncertainty, failed checks, missing evidence, and scope changes disclosed
 
 ## Progress and Completion Notes
 
-[Executor records completed steps and checks, outputs, failures, and next useful action. Do not label unexecuted work as complete.]
+[Executor records completed steps and checks, outputs, failures, and next useful action. Do not label unexecuted work as complete. Keep revision state here when this plan is used; other existing documents may link here instead of duplicating four progress ledgers.]
 
 When finished, summarize results, paths, and caveats to the user. Generate a report only when requested; see [report format guidance](../SKILL.md#completion-and-reports). A report is not a mandatory checklist step. Do not commit without user authorization.

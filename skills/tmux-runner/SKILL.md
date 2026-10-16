@@ -1,118 +1,113 @@
 ---
 name: tmux-runner
-description: 'Run a long-running analysis under tmux so it survives agent timeouts. Use for heavy tools (SCENIC, CellRanger, STAR, …), large data, or jobs expected to take more than ~2 minutes. No plan or delegated worker is required.'
+description: 'Run a long-running analysis under tmux so it survives agent timeouts, with an explicit setsid alternative. Use for heavy tools (SCENIC, CellRanger, STAR, …), large data, or jobs expected to take more than ~2 minutes. No plan or delegated worker is required.'
 ---
 
 # Tmux Runner
 
-Canonical wrapper + workflow for executing a long-running analysis script inside a
-detached tmux session, so it survives agent timeouts and can be monitored in real
-time.
-
-The main agent can use this directly. A delegated execution worker can use the
-same wrapper when useful; neither delegation nor a plan file is required.
-
-## The wrapper script
-
-A ready-to-use, commented copy lives next to this SKILL.md at
-`references/tmux_runner.sh`. **Copy it into the module — do not transcribe it**
-(it contains delicate shell/JSON escaping; transcribing by hand is the #1 way to
-break it):
+Main agents and delegated workers use the same wrapper. Copy it, do not transcribe:
 
 ```bash
 mkdir -p <Module>/scripts/utils
 cp <this skill's location>/references/tmux_runner.sh <Module>/scripts/utils/tmux_runner.sh
-chmod +x <Module>/scripts/utils/tmux_runner.sh
 ```
 
-`<this skill's location>` is the `<location>` of `tmux-runner` in your
-`<available_skills>` block.
+Requires Linux, Bash, Python 3, util-linux `flock`, and the selected backend.
+Module paths resolve from the wrapper's location; the analysis runs in the caller's cwd.
 
-### What the wrapper does
-
-- Resolves `<Module>` from its own path (`<Module>/scripts/utils/`), so logs always
-  land under the right module regardless of the cwd it is launched from.
-- Captures the **script's** real exit code via `${PIPESTATUS[0]}` (not `tee`'s,
-  which is ~always 0) → writes `<Module>/tmux/<session>.status` as
-  `EXIT_STATUS:<code>`.
-
-## When to use tmux
-
-Use tmux for ANY of:
-
-- The plan marks the step `**Long-running**: yes` or `**Estimated time**: >5min`
-- Large datasets (>10k cells, >5k genes)
-- SCENIC, cell communication, trajectory analysis, or multi-sample processing
-- External tools (CellRanger, STAR, HISAT2, …)
-- You judge it will take more than ~2 minutes
-
-The ~2-minute judgment is the operative threshold; the plan markers are signals,
-not a separate threshold.
-
-Quick steps (QC filtering, simple plots, small data) → run directly via `bash`,
-no tmux.
-
-## Launch
+## Launch and dependencies
 
 ```bash
-bash <Module>/scripts/utils/tmux_runner.sh \
-  "sci_<module>_<step>" \
-  <Module>/scripts/stages/01_analysis.py
+bash <Module>/scripts/utils/tmux_runner.sh sci_module_step <Module>/scripts/stages/run_step.sh "argument with spaces"
 ```
 
-Extra args after the script path are forwarded to the script (`$*`).
+The entry point is a **shell script**, not a `.py` or `.R` file. Put the actual command
+in it, e.g. `exec mamba run -n myenv python -u path/to/01_analysis.py "$@"`.
+Use explicit environment commands/interpreter paths instead of relying on an interactive
+shell's activation. All arguments are preserved as separate arguments.
 
-### Session naming
-
-`sci_<module>_<step>` — e.g. `sci_preprocessing_p01`, `sci_clustering_p02`,
-`sci_deg_p03`.
-
-## Monitor (poll every 10–30 s)
+Default launch is asynchronous: exit 0 means **started**, not completed. For dependent
+steps, use `--wait` and `&&` (or `set -e` in a chain shell script):
 
 ```bash
-tmux has-session -t "sci_<module>_<step>" 2>/dev/null && echo "Running" || echo "Finished"
-tail -20 <Module>/tmux/<session>.log
-cat <Module>/tmux/<session>.status 2>/dev/null || echo "Still running"
-tail -1 <Module>/tmux/manifest.jsonl
+bash <Module>/scripts/utils/tmux_runner.sh --wait sci_module_p01 path/to/p01.sh &&
+bash <Module>/scripts/utils/tmux_runner.sh --wait sci_module_p02 path/to/p02.sh
 ```
 
-When the session no longer exists, read the `.status` file for the exit code; if
-non-zero, read the log to diagnose.
+`--wait` returns the script's exit code; 125 means the runner disappeared or the run
+was replaced, not scientific failure. Validate upstream artifacts before consuming them;
+zero exit alone does not establish that contract. Put very long chains in a shell script
+and launch that script once with the wrapper, rather than keeping a bash tool open past
+its timeout. Interrupting the waiter does not cancel a detached computation.
 
-## Verify completion
+## Backend choice and limits
 
-After the session ends:
-
-1. `cat <Module>/tmux/<session>.status` → expect `EXIT_STATUS:0` (the manifest's
-   `"exitCode"` is the same value — one check suffices)
-2. Expected output files (from the task or an optional plan) are present,
-   non-empty, readable, and pass the analysis-specific content checks
-3. Inspect the log for traceback, ERROR, and WARNING; resolve errors and assess
-   warnings rather than treating every warning as failure
-
-## Error handling
-
-- **Non-zero exit / script fails**: read the full log, identify the error, fix the
-  script, and re-launch.
-- **No status file after a long wait**: possibly hung — inspect with
-  `tmux capture-pane -t <name>`.
-
-## Cleanup
-
-After verifying results:
+Tmux is the default; attach with `tmux attach -t sci_module_step`. If tmux is unreliable
+on this host, choose **before starting**:
 
 ```bash
-tmux kill-session -t "sci_<module>_<step>" 2>/dev/null || true
+bash <Module>/scripts/utils/tmux_runner.sh --backend setsid sci_module_step path/to/run_step.sh
 ```
 
-## Files produced
+This starts a new process session with detached stdio. `nohup` alone only ignores SIGHUP;
+`setsid` also separates the process group. Neither survives host shutdown, OOM, cgroup-wide
+kill, or targeted process termination. Do not automatically replay a job after tmux dies:
+it might still be running, or might have partially published outputs. No daemon or
+systemd service is installed by this wrapper.
 
-Record these paths with the execution outcome (and in a delegated handoff if
-one is used):
+## Monitor and verify
 
-- `scripts/utils/tmux_runner.sh` → copied wrapper
-- `tmux/<session>.log` → execution log
-- `tmux/<session>.status` → actual script exit status
-- `tmux/manifest.jsonl` → append-only run history (one JSON line per run)
+Files in `<Module>/tmux/`:
+- `<session>.log`: current log (reset **before** launch).
+- `<session>.status`: `STATE:RUNNING`, `RUN_ID`, `START_TS`, `BACKEND` immediately;
+  on completion, atomically replaced with `EXIT_STATUS:<code>`, `STATE:FINISHED`,
+  the same run ID and timestamps. Absence of an exit code is **not success**.
+- `<session>.status.pid`: worker PID, for process inspection; a PID alone can be reused.
+- `<session>.status.last` / `<session>.log.last`: previous run, not current evidence.
+- `manifest.jsonl`: append-only completed run history, including run ID and backend.
 
-The executor updates any checklist or plan after verifying completion.
+Read status and log when a result is needed, or use `--wait`; avoid repeated long sleeps.
+For tmux, session disappearance **without a completed status is interruption**, not
+completion. For setsid inspect the recorded PID and command (`ps`) as well as status.
+After exit 0, check that expected outputs are non-empty, readable, correctly aligned,
+and scientifically valid. Assess log warnings and resolve errors.
+
+A duplicate session or unresolved RUNNING status is refused, never killed/overwritten.
+For an interrupted run, inspect processes and outputs first; stop any surviving job
+only when intended. Then archive the unresolved status and log (or choose a new run
+name) before a deliberate rerun. Use a unique `sci_<module>_<step>` name for each job.
+SIGKILL/server loss may leave RUNNING forever; no exit trap can reliably report those.
+
+## Protect expensive outputs
+
+Write large/final artifacts to a unique temporary file **in the destination directory**,
+close and validate it, then atomically rename it. Never stream directly over the only
+valid result. For example (overwrite only when authorized):
+
+```python
+import os, tempfile
+from pathlib import Path
+import anndata as ad
+
+output = Path("results/data/annotated.h5ad")
+fd, temporary = tempfile.mkstemp(dir=output.parent, suffix=".h5ad")
+os.close(fd)
+try:
+    adata.write_h5ad(temporary)
+    check = ad.read_h5ad(temporary, backed="r")
+    assert check.shape == adata.shape
+    assert check.obs_names.equals(adata.obs_names)
+    check.file.close()
+    os.replace(temporary, output)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+```
+
+Add data-specific validation; shape checks are not full content checks. Same-filesystem
+rename prevents readers seeing a truncated final file, but is not a power-loss durability
+guarantee or authorization to overwrite inputs. SIGKILL can leave a temporary file;
+inspect it rather than treating it as a completed output.
+
+Record command, run ID, status/log paths, and actual output checks with the outcome
+(and in a delegated task's `result.md`).

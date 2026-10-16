@@ -49,7 +49,7 @@ export function registerPublicationCommand(pi: ExtensionAPI): void {
 			pi.sendUserMessage([
 				"用户请求 Publication 成图整理。读取 publication skill，直接盘点相关既有结果，只澄清影响交付的未知选择。",
 				"在分析目录 Publication/ 下生成一图一 notebook，相对路径引用数据，不复制大数据；保留来源与参数，导出单张图 PDF + PNG。",
-				"实际从头执行 notebook 验证复现。无需 Task、Scout 或 worker/reviewer 链；若缺少数据或需要新增分析，说明缺口并确认扩展范围。",
+				"实际从头执行 notebook 验证复现。无需 Task 或固定的智能体调用链；若缺少数据或需要新增分析，说明缺口并确认扩展范围。",
 				"完成后告知产物和验证情况，不自动生成报告或 commit/push。",
 				args.trim(),
 			].filter(Boolean).join("\n"), { deliverAs: "followUp" });

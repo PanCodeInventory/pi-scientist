@@ -4,7 +4,7 @@ import { truncateTail, type ExtensionAPI } from "@earendil-works/pi-coding-agent
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { collectScriptRuns, fmtDuration, stubDetails } from "./shared.js";
+import { collectScriptRuns, fmtDuration } from "./shared.js";
 
 export function registerLogsTool(pi: ExtensionAPI): void {
 	pi.registerTool({
@@ -58,7 +58,7 @@ export function registerLogsTool(pi: ExtensionAPI): void {
 					const tail = truncateTail(allLines.slice(Math.max(0, allLines.length - n)).join("\n"));
 					return {
 						content: [{ type: "text", text: `tail -n ${n} ${logPath}\n${"─".repeat(40)}\n${tail.content}${tail.truncated ? `\n[Truncated; full log: ${logPath}]` : ""}` }],
-						details: stubDetails("sci_logs", "log"),
+						details: { action: "log" },
 					};
 				} catch {
 					throw new Error(`Cannot read log: ${logPath}`);
@@ -66,7 +66,7 @@ export function registerLogsTool(pi: ExtensionAPI): void {
 			}
 
 			if (runs.length === 0) {
-				return { content: [{ type: "text", text: `No script-run manifests found under ${root}. Only tmux-runner jobs create <Module>/tmux/manifest.jsonl; direct main-agent execution is supported. Do not run a job just to populate logs.` }], details: stubDetails("sci_logs", action) };
+				return { content: [{ type: "text", text: `No script-run manifests found under ${root}. Only tmux-runner jobs create <Module>/tmux/manifest.jsonl; direct main-agent execution is supported. Do not run a job just to populate logs.` }], details: { action: action } };
 			}
 
 			// Sort newest-first by endTs (fall back to ts string, then manifest order)
@@ -76,7 +76,7 @@ export function registerLogsTool(pi: ExtensionAPI): void {
 			if (action === "failed") {
 				selected = runs.filter((r) => r.exitCode !== 0);
 				if (selected.length === 0) {
-					return { content: [{ type: "text", text: `All ${runs.length} recorded run(s) exited zero. No non-zero exits recorded; scientific validation is not implied.` }], details: stubDetails("sci_logs", "failed") };
+					return { content: [{ type: "text", text: `All ${runs.length} recorded run(s) exited zero. No non-zero exits recorded; scientific validation is not implied.` }], details: { action: "failed" } };
 				}
 			} else if (action === "latest") {
 				// Keep only the last run per (module, session)
@@ -98,7 +98,7 @@ export function registerLogsTool(pi: ExtensionAPI): void {
 				(params.module ? ` in ${params.module}` : "") +
 				`\n(root: ${root})`;
 			const body = truncateTail(lines.join("\n"));
-			return { content: [{ type: "text", text: `${header}\n${"─".repeat(40)}\n${body.content}${body.truncated ? `\n[Truncated; read <Module>/tmux/manifest.jsonl under ${root}]` : ""}` }], details: stubDetails("sci_logs", action) };
+			return { content: [{ type: "text", text: `${header}\n${"─".repeat(40)}\n${body.content}${body.truncated ? `\n[Truncated; read <Module>/tmux/manifest.jsonl under ${root}]` : ""}` }], details: { action: action } };
 		},
 
 		renderCall(args, theme, _context) {

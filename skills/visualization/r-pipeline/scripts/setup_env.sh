@@ -1,48 +1,63 @@
 #!/bin/bash
-# setup_env.sh - Setup a stable environment for BasicViz
-# Strategy: Use Python 3.8 and 'defaults' channel for maximum legacy server compatibility
-set -e
+# setup_env.sh - Verify the environment for BasicViz (non-destructive).
+#
+# Modern stack (verified): R >= 4.2 + reticulate >= 1.40 + CRAN 'anndata' works
+# with Python 3.9+ and numpy 2.x. The legacy Python 3.8 / numpy<2.0 conda env is
+# no longer needed and this script does NOT create or remove any environments.
+set -euo pipefail
 
-ENV_NAME="basicviz"
-
-echo ">>> [1/4] Checking Conda..."
-if ! command -v conda &> /dev/null; then
-    echo "Error: Conda is not installed."
+# R_ENV_BIN is an environment's bin directory, not the base R on PATH.
+R_SCRIPT="${R_ENV_BIN:+${R_ENV_BIN%/}/Rscript}"
+R_SCRIPT="${R_SCRIPT:-$(command -v Rscript || true)}"
+if [ -z "$R_SCRIPT" ] || [ ! -x "$R_SCRIPT" ]; then
+    echo "Rscript not found. Set R_ENV_BIN=/path/to/env/bin or run this check via mamba run -n <env>." >&2
+    exit 1
+fi
+echo ">>> [1/3] Checking R packages with $R_SCRIPT..."
+if ! MISSING_R=$("$R_SCRIPT" -e '
+pkgs <- c("ggplot2","dplyr","tibble","tidyr","scales","yaml","ggsci",
+          "RColorBrewer","reticulate","anndata","cowplot","ggalluvial","ggrastr")
+missing <- pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
+cat(if (length(missing)) paste(missing, collapse = " ") else "")
+'); then
+    echo "R package check failed in $R_SCRIPT (not evidence that packages are installed)." >&2
     exit 1
 fi
 
-echo ">>> [2/4] Resetting Environment '$ENV_NAME'..."
-conda remove -n $ENV_NAME --all -y || true
-
-echo ">>> [3/4] Creating Environment (Compatibility Mode)..."
-# KEY CHANGES:
-# 1. Channel: Use 'defaults' (more compatible binaries) instead of 'conda-forge'
-# 2. Python: 3.8 (older, stable)
-# 3. Numpy: <1.25 (to match Python 3.8 era)
-conda create -n $ENV_NAME \
-    python=3.8 \
-    pandas \
-    anndata \
-    h5py \
-    scipy \
-    "numpy<1.25" \
-    -c defaults -y
-
-echo ">>> [4/4] Verifying installation..."
-PY_PATH=$(conda run -n $ENV_NAME which python)
-ENV_ROOT=$(conda run -n $ENV_NAME echo $CONDA_PREFIX)
-
-conda run -n $ENV_NAME python -c "import numpy; print(f'Numpy: {numpy.__version__}')"
-conda run -n $ENV_NAME python -c "import anndata; print(f'Anndata: {anndata.__version__}')"
+if [ -n "$MISSING_R" ]; then
+    echo "Missing R packages: $MISSING_R"
+    echo "Install with:"
+    echo "  \"$R_SCRIPT\" -e 'install.packages(strsplit(\"$MISSING_R\", \" \")[[1]])'"
+    MISSING=1
+else
+    echo "OK: all required R packages present."
+fi
 
 echo ""
-echo "======================================================="
-echo "✅ Environment Setup Successful!"
+echo ">>> [2/3] Checking Python (anndata)..."
+PY_BIN="${RETICULATE_PYTHON:-$(command -v python3 || command -v python || true)}"
+if [ -z "$PY_BIN" ]; then
+    echo "No python3 found on PATH."
+    MISSING=1
+elif "$PY_BIN" -c "import anndata" 2>/dev/null; then
+    echo "OK: anndata importable from $PY_BIN"
+else
+    echo "Python at $PY_BIN cannot import anndata. Either:"
+    echo "  a) pip install into it:      $PY_BIN -m pip install anndata"
+    echo "  b) or create a dedicated env (optional, not required for modern R):"
+    echo "       conda create -n basicviz python=3.12 anndata -c conda-forge -y"
+    echo "       export RETICULATE_PYTHON=\$(conda run -n basicviz which python)"
+    MISSING=1
+fi
+
 echo ""
-echo "Run the pipeline using this command:"
-echo ""
-echo "export RETICULATE_PYTHON=$PY_PATH"
-# We still try to export LD_LIBRARY_PATH as a safety net
-echo "export LD_LIBRARY_PATH=$ENV_ROOT/lib:\$LD_LIBRARY_PATH"
-echo "Rscript main.R"
-echo "======================================================="
+echo ">>> [3/3] Summary"
+if [ -n "${MISSING:-}" ]; then
+    echo "Some checks failed - fix the items above, then re-run this script."
+    exit 1
+fi
+echo "Environment OK. If you use a dedicated conda env, export it first:"
+echo "  export RETICULATE_PYTHON=\$(conda run -n basicviz which python)"
+echo "Then run the pipeline:"
+echo "  \"$R_SCRIPT\" main.R            # from the directory containing config.yaml"
+echo "  \"$R_SCRIPT\" main.R cfg.yaml   # or with an explicit config path"

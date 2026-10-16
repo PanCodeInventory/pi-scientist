@@ -1,96 +1,98 @@
 # BasicViz Pipeline - Main Runner
-# Orchestrates color generation and plot scripts from a flattened scripts directory
+# Reads config.yaml, sets up Python once, loads the h5ad once, then calls the
+# plot_*() function libraries. No Snakemake objects.
+#
+# Usage:
+#   Rscript main.R                 # uses ./config.yaml
+#   Rscript main.R my/config.yaml  # explicit config path
+#
+# Can be run from any directory; script paths resolve relative to this file.
 suppressPackageStartupMessages({
     library(methods)
     library(yaml)
 })
 
-# Load Config
-config <- read_yaml("config.yaml")
-
-# Ensure output directory exists
-dir.create(config$output_dir, showWarnings = FALSE, recursive = TRUE)
-
-# Define Snakemake Class
-setClass("Snakemake",
-         slots = c(
-           input = "list",
-           output = "list",
-           params = "list",
-           wildcards = "list",
-           config = "list",
-           log = "list"
-         )
-)
-
-# Helper to run script
-run_script <- function(script_path, input, output, params=list(), log_file="run.log") {
-  message(paste("\n>>> Running:", script_path))
-  
-  # Create log directory if needed
-  log_path <- file.path(config$output_dir, "logs")
-  dir.create(log_path, showWarnings = FALSE, recursive = TRUE)
-  full_log_path <- file.path(log_path, paste0(basename(script_path), ".log"))
-  
-  # Create snakemake object in global env
-  # We use assignment to global environment so the sourced script can see it
-  assign("snakemake", new("Snakemake",
-                    input = input,
-                    output = output,
-                    params = params,
-                    config = config,
-                    log = list(full_log_path)), envir = .GlobalEnv)
-  
-  tryCatch({
-    source(script_path, local = FALSE)
-  }, error = function(e) {
-    message("Error running ", script_path, ": ", e$message)
-    quit(status=1)
-  })
+# --- Resolve this script's directory (robust to any working directory) ---
+script_dir <- local({
+    arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+    if (length(arg) >= 1) dirname(normalizePath(sub("^--file=", "", arg[1])))
+    else "."
+})
+if (!file.exists(file.path(script_dir, "utils.R"))) {
+    stop("Cannot locate utils.R next to main.R (expected in: ", script_dir, ")")
 }
 
-# 1. Generate Colors
+# --- Load function libraries ---
+source(file.path(script_dir, "utils.R"))
+source(file.path(script_dir, "generate_colors.R"))
+source(file.path(script_dir, "plot_umap.R"))
+source(file.path(script_dir, "plot_dotplot.R"))
+source(file.path(script_dir, "plot_feature.R"))
+source(file.path(script_dir, "plot_proportions.R"))
+source(file.path(script_dir, "plot_river.R"))
+
+# --- Dependency check: fail fast with actionable install commands ---
+check_r_packages()
+
+# --- Config ---
+config_arg <- commandArgs(trailingOnly = TRUE)[1]
+config_file <- if (!is.na(config_arg)) config_arg else "config.yaml"
+if (!file.exists(config_file)) {
+    stop("Config file not found: ", config_file,
+         "\nRun from the directory containing config.yaml, or pass a path:",
+         "\n  Rscript main.R path/to/config.yaml")
+}
+config <- read_yaml(config_file)
+
+# Publication standard is 9pt (see shared/figure-standards.md); allow config override.
+base_size <- if (!is.null(config$theme$font_size)) as.numeric(config$theme$font_size) else 9
+
+dir.create(config$output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# --- Python + data: initialize ONCE, reuse across all plots ---
+setup_python()
+suppressPackageStartupMessages(library(anndata))
+message("Loading h5ad: ", config$input_h5ad)
+ad <- read_h5ad(config$input_h5ad)
+
+# --- Step 1: Colors ---
 message("--- Step 1: Generate Colors ---")
 colors_file <- file.path(config$output_dir, "colors.yaml")
-run_script("generate_colors.R",
-           input = list(h5ad = config$input_h5ad),
-           output = list(colors = colors_file))
+generate_colors(ad, config, colors_file)
+color_map <- load_colors(colors_file)
 
-# 2. Loop through plots
+# --- Step 2: Plots (function dispatch by type) ---
 message("\n--- Step 2: Generate Plots ---")
+plot_funcs <- list(
+    umap       = plot_umap,
+    dotplot    = plot_dotplot,
+    feature    = plot_feature,
+    proportion = plot_proportions,
+    river      = plot_river
+)
+
 for (plot in config$plots) {
-  plot_out <- file.path(config$output_dir, paste0(plot$name, ".pdf"))
-  
-  if (plot$type == "umap") {
-    run_script("plot_umap.R",
-               input = list(h5ad = config$input_h5ad, colors = colors_file),
-               output = list(plot = plot_out),
-               params = list(plot_config = plot))
-               
-  } else if (plot$type == "proportion") {
-    run_script("plot_proportions.R",
-               input = list(h5ad = config$input_h5ad, colors = colors_file),
-               output = list(plot = plot_out),
-               params = list(plot_config = plot))
-               
-  } else if (plot$type == "dotplot") {
-    run_script("plot_dotplot.R",
-               input = list(h5ad = config$input_h5ad, colors = colors_file),
-               output = list(plot = plot_out),
-               params = list(plot_config = plot))
-               
-  } else if (plot$type == "feature") {
-    run_script("plot_feature.R",
-               input = list(h5ad = config$input_h5ad, colors = colors_file),
-               output = list(plot = plot_out),
-               params = list(plot_config = plot))
-               
-  } else if (plot$type == "river") {
-    run_script("plot_river.R",
-               input = list(h5ad = config$input_h5ad, colors = colors_file),
-               output = list(plot = plot_out),
-               params = list(plot_config = plot))
-  }
+    if (is.null(plot_funcs[[plot$type]])) {
+        warning("Unknown plot type: '", plot$type, "' (skipped). Supported: ",
+                paste(names(plot_funcs), collapse = ", "))
+        next
+    }
+    plot_out <- file.path(config$output_dir, paste0(plot$name, ".pdf"))
+    message("\n>>> Plot: ", plot$name, " [", plot$type, "]")
+    tryCatch(
+        plot_funcs[[plot$type]](
+            ad           = ad,
+            color_map    = color_map,
+            p_config     = plot,
+            marker_config = config$dotplot$markers,
+            output_file  = plot_out,
+            base_size    = base_size
+        ),
+        error = function(e) {
+            message("FAILED: ", plot$name, " - ", e$message)
+            quit(status = 1)
+        }
+    )
 }
 
 message("\nAll Done! Results are in ", config$output_dir)

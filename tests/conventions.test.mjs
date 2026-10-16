@@ -8,8 +8,11 @@ import { registerLogsTool } from '../dist/tools/logs.js';
 
 const read = file => fs.readFileSync(new URL('../' + file, import.meta.url), 'utf8');
 
-test('figure standard remains byte-for-byte identical to pre-reform e39df4b', () => {
-  const hash = createHash('sha256').update(read('skills/visualization/shared/figure-standards.md')).digest('hex');
+test('32 figure standards and checklist stay unchanged; technical QC does not claim visual approval', () => {
+  const standards = read('skills/visualization/shared/figure-standards.md');
+  assert.match(standards, /technical QC passed;\nvisual review pending/);
+  const original = standards.replace(/## Programmatic QC when visual inspection is unavailable\n[\s\S]*?(?=## Pre-submission Checklist)/, '');
+  const hash = createHash('sha256').update(original).digest('hex');
   assert.equal(hash, 'a4e4c78ccffa068b10e4f250d1b51c3cd4d2f7082272995331a4e555d3ad48de', 'Changing user figure standards requires deliberate approval and a new baseline');
 });
 
@@ -32,7 +35,7 @@ test('publication delivery and annotation approval survive removal of orchestrat
 test('package includes both the declared source extension and compiled API', () => {
   const pkg = JSON.parse(read('package.json'));
   assert.ok(pkg.files.includes('index.ts'));
-  for (const directory of ['core', 'dialogue', 'tools', 'agents', 'skills', 'dist']) assert.ok(pkg.files.includes(directory), directory);
+  for (const directory of ['core', 'dialogue', 'tools', 'skills', 'dist']) assert.ok(pkg.files.includes(directory), directory);
   assert.deepEqual(pkg.pi.extensions, ['./index.ts']);
   assert.equal(pkg.main, './dist/index.js');
 });

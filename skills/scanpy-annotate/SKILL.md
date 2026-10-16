@@ -11,6 +11,29 @@ Systematic cell type annotation from single-cell data. Three tiers: (1) quick ma
 
 **Data prerequisites**: The AnnData must have validated preprocessing, Leiden clusters, UMAP coordinates, and marker genes for the requested annotation workflow. Reuse compatible existing outputs; use **scanpy-prep** or **scanpy-cluster** only to supply missing prerequisites, not to repeat completed analysis.
 
+## Matrix, identifiers and round-trip checks
+
+- Inspect `.X`, layers, `.raw.var_names` and `var_names` independently. Scanpy
+  `score_genes` / `rank_genes_groups` default `use_raw=None` may select `.raw`.
+  If requested symbols and the intended normalized expression are in `.X` while
+  `.raw` uses Ensembl IDs, set **`use_raw=False` explicitly**, including plots.
+  Do not blindly select `.X` if it contains counts/scaled values. Examples below
+  assume validated log-normalized `.X`; the bundled CLI DEG path still uses Scanpy
+  defaults, so use explicit Scanpy calls for mismatched `.raw` rather than that path.
+- After h5ad write/read, string obs columns may become categorical. For new labels,
+  use `.cat.add_categories(...)` or convert with `.astype("string")` before patching.
+  Preserve NA: `.astype("string").fillna("Unknown")`, not `astype(str)` followed by
+  `fillna` (missing values may already be the literal string `"nan"`). Check unmapped
+  IDs and missingness before/after saving.
+- Write expensive h5ad outputs through a same-directory temporary file, validate,
+  then rename; see tmux-runner's atomic-write example. Do not overwrite original inputs.
+- Verify organism and exact gene identifiers; do not infer species solely from casing
+  or “correct” non-human symbols by uppercasing. Store organism, matrix choice,
+  marker panels and identifier mapping in the existing analysis YAML when needed.
+  The bundled enrichment/TF/Hallmark helpers have human/mouse assumptions; for other
+  organisms reuse the evidence workflow with validated organism-specific resources,
+  not silently the human defaults. No new panel framework is required.
+
 ## Quick Manual Annotation
 
 For routine analyses where cell types are well-characterized (PBMC, blood, known tissues):
@@ -20,8 +43,8 @@ For routine analyses where cell types are well-characterized (PBMC, blood, known
 marker_genes = ['CD3D', 'CD14', 'MS4A1', 'NKG7', 'FCGR3A']
 
 # Visualize markers on UMAP
-sc.pl.umap(adata, color=marker_genes, use_raw=True)
-sc.pl.dotplot(adata, var_names=marker_genes, groupby='leiden')
+sc.pl.umap(adata, color=marker_genes, use_raw=False)
+sc.pl.dotplot(adata, var_names=marker_genes, groupby='leiden', use_raw=False)
 
 # Manual mapping: cluster ID → cell type
 cluster_to_celltype = {
@@ -44,7 +67,7 @@ For scoring cells against a custom gene set (e.g. a T cell signature):
 
 ```python
 gene_set = ['CD3D', 'CD3E', 'CD3G']
-sc.tl.score_genes(adata, gene_set, score_name='T_cell_score')
+sc.tl.score_genes(adata, gene_set, score_name='T_cell_score', use_raw=False)
 sc.pl.umap(adata, color='T_cell_score')
 ```
 

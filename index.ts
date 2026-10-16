@@ -1,4 +1,6 @@
-/** Scientist: coordinated analysis with persistent experts and optional review. */
+/** Scientific capabilities: principles, delivery conventions, skills and dialogue.
+ *  No coordinator/worker roles or delegation machinery — sub-agent dispatch is a
+ *  documented convention (see the subagent-delegation skill), not extension code. */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,43 +9,22 @@ import { registerGenerateReportCommand, registerPublicationCommand, registerRefl
 import { registerScientificDialogue } from "./dialogue/index.js";
 import { injectScientistPrinciples } from "./core/enforcement.js";
 import { injectScientistConventions } from "./core/conventions.js";
-import { registerScientistWorkflowTools } from "./tools/index.js";
-import { registerLibrarianTool } from "./tools/librarian.js";
-import { registerTeamTools } from "./tools/team.js";
-import { registerTeamHandoff } from "./tools/handoff.js";
+import { registerLogsTool } from "./tools/logs.js";
+import { registerHerdrWatch } from "./core/herdr-watch.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = [here, path.resolve(here, "..")].find(p => fs.existsSync(path.join(p, "skills"))) ?? here;
 
-function resolvePackageRoot(): string {
-	return [__dirname, path.resolve(__dirname, "..")]
-		.find((candidate) => fs.existsSync(path.join(candidate, "skills")))
-		?? path.resolve(__dirname, "..");
-}
-
-export default function (pi: ExtensionAPI): void {
-	pi.on("resources_discover", async () => ({
-		skillPaths: [path.join(resolvePackageRoot(), "skills")],
-	}));
-
-	// Specialists retain domain resources but cannot recursively orchestrate Scientist.
-	if (process.env.SCIENTIST_SUBAGENT === "1") {
-		registerTeamHandoff(pi);
-		return;
-	}
-
-	registerScientificDialogue(pi);
-	registerGenerateReportCommand(pi);
-	registerPublicationCommand(pi);
-	registerReflectCommand(pi);
-	registerScientistWorkflowTools(pi);
-	registerLibrarianTool(pi);
-	registerTeamTools(pi);
-
-	pi.on("before_agent_start", async (event, ctx) => {
-		if (ctx.hasUI) ctx.ui.setStatus("scientist", "Scientist · team");
-		// Respect Pi's active tool set, including --tools/--exclude-tools. Never
-		// silently re-enable a tool the user disabled.
-		const prompt = injectScientistConventions(event.systemPrompt);
-		return { systemPrompt: process.env.SCIENTIST_NO_ENFORCEMENT ? prompt : injectScientistPrinciples(prompt) };
-	});
+export default function scientist(pi: ExtensionAPI): void {
+    pi.on("resources_discover", async () => ({ skillPaths: [path.join(root, "skills")] }));
+    pi.on("before_agent_start", async event => {
+        const prompt = injectScientistConventions(event.systemPrompt);
+        return { systemPrompt: process.env.SCIENTIST_NO_ENFORCEMENT ? prompt : injectScientistPrinciples(prompt) };
+    });
+    registerScientificDialogue(pi);
+    registerGenerateReportCommand(pi);
+    registerPublicationCommand(pi);
+    registerReflectCommand(pi);
+    registerLogsTool(pi);
+    registerHerdrWatch(pi);
 }

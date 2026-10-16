@@ -7,8 +7,8 @@ output_dir: "results"                   # Output directory for plots
 
 # --- Global Theme ---
 theme:
-  font_size: 14
-  font_family: "Arial"
+  font_size: 9                       # Publication standard 9pt (see shared/figure-standards.md)
+  font_family: "sans"
   aspect_ratio: 1
 
 # --- Plot Definitions ---
