@@ -22,6 +22,8 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 		description: "Ask for a consequential choice or information only the user can supply. Only question is required; explanation, recommendation and options are optional. Reuse existing answers. No decision IDs, dependency tree or final contract confirmation is required.",
 		promptSnippet: "Ask the user when a material choice is unresolved",
 		promptGuidelines: ["Use ask_user_question for material unresolved choices, not discoverable facts or repeated confirmations. Explain scientific trade-offs when useful. Ask dependent follow-ups only after receiving the relevant answer. In non-interactive runs ask in chat and wait; never invent an answer."],
+		// Answers must remain top-level tool results for branch-aware decision history.
+		exposure: "model-only",
 		executionMode: "sequential",
 		parameters: Type.Object({
 			question: Type.String({ description: "Self-contained question", minLength: 1, maxLength: 1000 }),
@@ -72,10 +74,14 @@ export function registerScientificDialogue(pi: ExtensionAPI): void {
 		renderCall(args, theme) {
 			return new Text(theme.fg("toolTitle", theme.bold("ask_user_question ")) + theme.fg("muted", args.question || "..."), 0, 0);
 		},
-		renderResult(result, _options, theme) {
+		renderResult(result, options, theme, context) {
+			const text = result.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+			if (context.isError) return new Text(theme.fg("error", text || "提问失败；未获确认"), 0, 0);
+			if (options.isPartial) return new Text(theme.fg("muted", text || "等待用户回答…"), 0, 0);
 			const details = result.details as AskUserQuestionDetails | undefined;
-			return new Text(details?.cancelled ? theme.fg("warning", "已取消；未获确认")
-				: theme.fg("success", "✓ ") + theme.fg("accent", details?.answer ?? ""), 0, 0);
+			if (details?.cancelled) return new Text(theme.fg("warning", "已取消；未获确认"), 0, 0);
+			if (!details?.answer) return new Text(theme.fg("warning", text || "未记录答案；未获确认"), 0, 0);
+			return new Text(theme.fg("success", "✓ ") + theme.fg("accent", details.answer), 0, 0);
 		},
 	});
 }

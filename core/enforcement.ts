@@ -1,7 +1,5 @@
 /** Scientific principles apply regardless of the orchestration environment. */
-export const SCIENTIST_ENFORCEMENT = `
-<scientist-principles>
-Understand the research question, actual data, experimental units, replication,
+export const SCIENTIST_PRINCIPLES_SECTION = `Understand the research question, actual data, experimental units, replication,
 pairing, intended contrasts and existing results before selecting methods. Inspect
 facts directly and use relevant domain skills. Reuse confirmed decisions; clarify
 only unresolved choices that materially affect scientific validity or user intent.
@@ -23,9 +21,10 @@ Track running computations and inspect their state before retries. Distinguish
 completed, running, blocked and unverified work. Never fabricate data, results or
 citations; distinguish exploratory associations from confirmatory evidence.
 Follow the separate delivery conventions. Generate formal reports and publication
-notebooks when requested. Do not commit or push unless asked.
-</scientist-principles>
-`;
+notebooks when requested. Do not commit or push unless asked.`;
+
+/** Legacy string helper for consumers of the compiled API. */
+export const SCIENTIST_ENFORCEMENT = `\n<scientist-principles>\n${SCIENTIST_PRINCIPLES_SECTION}\n</scientist-principles>\n`;
 export function injectScientistPrinciples(prompt: string): string {
     return prompt.includes("<scientist-principles>") ? prompt : prompt + SCIENTIST_ENFORCEMENT;
 }

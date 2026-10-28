@@ -1,9 +1,6 @@
 /** User-owned coding and output conventions. Do not weaken these when changing orchestration. */
 
-export const SCIENTIST_CONVENTIONS = `
-
-<scientist-conventions>
-These are the user's coding and delivery conventions, not workarounds for model limitations.
+export const SCIENTIST_CONVENTIONS_SECTION = `These are the user's coding and delivery conventions, not workarounds for model limitations.
 Preserve them unless the user explicitly requests a different convention.
 These are defaults, not overrides of explicit project instructions in AGENTS.md.
 Within the applicable instruction hierarchy, follow the current user request, then
@@ -57,9 +54,10 @@ do not silently choose a rule or infer permission to commit/push.
   large embedded/copied datasets. Execute from a clean kernel to verify reproduction.
 - Never fabricate or substitute simulated/mock data for an analysis, missing inputs
   or failed retrieval. Report the missing evidence instead. Do not commit or push
-  without the user's request.
-</scientist-conventions>
-`;
+  without the user's request.`;
+
+/** Legacy string helper for consumers of the compiled API. */
+export const SCIENTIST_CONVENTIONS = `\n\n<scientist-conventions>\n${SCIENTIST_CONVENTIONS_SECTION}\n</scientist-conventions>\n`;
 
 export function injectScientistConventions(prompt: string): string {
 	return prompt.includes("<scientist-conventions>") ? prompt : prompt + SCIENTIST_CONVENTIONS;

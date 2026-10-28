@@ -38,6 +38,8 @@ test('package includes both the declared source extension and compiled API', () 
   for (const directory of ['core', 'dialogue', 'tools', 'skills', 'dist']) assert.ok(pkg.files.includes(directory), directory);
   assert.deepEqual(pkg.pi.extensions, ['./index.ts']);
   assert.equal(pkg.main, './dist/index.js');
+  assert.ok(pkg.files.includes('!**/__pycache__/**'));
+  assert.ok(pkg.files.includes('!**/*.pyc'));
 });
 
 function logsTool() {

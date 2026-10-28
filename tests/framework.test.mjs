@@ -33,17 +33,18 @@ test('extension preserves tool selection and separates conventions from strategy
   assert.deepEqual([...h.tools.keys()].sort(), ['ask_user_question', 'sci_logs']);
   assert.deepEqual([...h.commands.keys()].sort(), ['generate-report', 'publication', 'reflect', 'science-contract']);
   const [hook] = h.hooks.get('before_agent_start');
-  const out = await hook({ systemPrompt: 'base' }, { hasUI: false });
-  assert.match(out.systemPrompt, /<scientist-conventions>/);
-  assert.match(out.systemPrompt, /<scientist-principles>/);
-  assert.match(out.systemPrompt, /linear imperative research scripting/);
-  const repeated = await hook({ systemPrompt: out.systemPrompt }, { hasUI: false });
-  assert.equal(repeated.systemPrompt, out.systemPrompt);
-  assert.doesNotMatch(out.systemPrompt, /<scientific-contract-state>|<scientist-enforcement>/);
+  const event = { systemPromptOptions: { sections: { unrelated: 'keep me' } } };
+  assert.equal(await hook(event), undefined, 'must not force a complete prompt replacement');
+  const sections = event.systemPromptOptions.sections;
+  assert.match(sections['scientist-conventions'], /linear imperative research scripting/);
+  assert.match(sections['scientist-principles'], /Understand the research question/);
+  const once = { ...sections };
+  await hook(event);
+  assert.deepEqual(sections, once);
+  assert.equal(sections.unrelated, 'keep me');
   assert.equal(h.hooks.has('tool_call'), false);
   assert.equal(h.hooks.has('turn_start'), false);
-  const resources = await h.hooks.get('resources_discover')[0]();
-  assert.ok(fs.existsSync(resources.skillPaths[0]));
+  assert.equal(h.hooks.has('resources_discover'), false, 'skills must respect package resource filters');
   assert.ok(fs.existsSync(path.join(process.cwd(), 'skills/visualization/shared/figure-standards.md')));
 });
 
@@ -52,10 +53,11 @@ test('legacy no-enforcement flag skips strategy, not user conventions', async ()
   process.env.SCIENTIST_NO_ENFORCEMENT = '1';
   try {
     const h = harness(); scientist(h.api);
-    const out = await h.hooks.get('before_agent_start')[0]({ systemPrompt: 'base' }, { hasUI: false });
-    assert.match(out.systemPrompt, /<scientist-conventions>/);
-    assert.match(out.systemPrompt, /linear imperative research scripting/);
-    assert.doesNotMatch(out.systemPrompt, /<scientist-principles>/);
+    const event = { systemPromptOptions: { sections: { 'scientist-principles': 'old', unrelated: 'keep' } } };
+    await h.hooks.get('before_agent_start')[0](event);
+    assert.match(event.systemPromptOptions.sections['scientist-conventions'], /linear imperative research scripting/);
+    assert.equal(event.systemPromptOptions.sections['scientist-principles'], undefined);
+    assert.equal(event.systemPromptOptions.sections.unrelated, 'keep');
   } finally { if (prior === undefined) delete process.env.SCIENTIST_NO_ENFORCEMENT; else process.env.SCIENTIST_NO_ENFORCEMENT = prior; }
 });
 
@@ -136,6 +138,8 @@ test('question schema accepts only a question, without a contract ceremony', () 
   const h = harness(); registerScientificDialogue(h.api);
   const tool = h.tools.get('ask_user_question');
   assert.ok(Check(tool.parameters, { question: '主对比是 A vs B 吗？' }));
+  assert.equal(tool.exposure, 'model-only');
+  assert.equal(tool.executionMode, 'sequential');
   for (const field of ['decisionId', 'dependsOn', 'finalizesContract', 'category', 'evidence']) assert.ok(!(field in tool.parameters.properties));
   assert.equal(h.hooks.size, 0);
 });
@@ -217,7 +221,7 @@ test('TUI question overlay renders without recommendation and cleans up on abort
 });
 
 test('actual Pi SDK loads the extension and preserves conversation identity without model calls', async () => {
-  const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, AuthStorage } = await import('@earendil-works/pi-coding-agent');
+  const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, ModelRuntime } = await import('@earendil-works/pi-coding-agent');
   for (const tools of [undefined, ['read']]) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sci-sdk-test-'));
     const settingsManager = SettingsManager.inMemory(), native = SessionManager.inMemory(root);
@@ -225,7 +229,12 @@ test('actual Pi SDK loads the extension and preserves conversation identity with
     let session;
     try {
       await loader.reload();
-      ({ session } = await createAgentSession({ cwd: root, agentDir: path.join(root, 'agent'), resourceLoader: loader, settingsManager, authStorage: AuthStorage.inMemory(), sessionManager: native, tools }));
+      const modelRuntime = await ModelRuntime.create({
+        authPath: path.join(root, 'agent', 'auth.json'), modelsPath: null,
+        modelsStorePath: path.join(root, 'agent', 'models-cache.json'),
+        allowModelNetwork: false, refreshOnCreate: false,
+      });
+      ({ session } = await createAgentSession({ cwd: root, agentDir: path.join(root, 'agent'), resourceLoader: loader, settingsManager, modelRuntime, sessionManager: native, tools }));
       await session.bindExtensions({ onError: error => assert.fail(JSON.stringify(error)) });
       const id = session.sessionId, model = session.model;
       await session.sendCustomMessage({ customType: 'fixture-history', content: 'Known prior design decision', display: false });
@@ -242,7 +251,7 @@ test('actual Pi SDK loads the extension and preserves conversation identity with
 });
 
 test('actual Pi preserves tool filters and history across reload without mode machinery', async () => {
-  const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, AuthStorage } = await import('@earendil-works/pi-coding-agent');
+  const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, ModelRuntime } = await import('@earendil-works/pi-coding-agent');
   for (const { tools, excludeTools } of [{}, { tools: ['read'] }, { excludeTools: ['sci_logs'] }]) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sci-mode-test-'));
     const settingsManager = SettingsManager.inMemory(), native = SessionManager.inMemory(root);
@@ -250,7 +259,12 @@ test('actual Pi preserves tool filters and history across reload without mode ma
     let session;
     try {
       await loader.reload();
-      ({ session } = await createAgentSession({ cwd: root, agentDir: path.join(root, 'agent'), resourceLoader: loader, settingsManager, authStorage: AuthStorage.inMemory(), sessionManager: native, tools, excludeTools }));
+      const modelRuntime = await ModelRuntime.create({
+        authPath: path.join(root, 'agent', 'auth.json'), modelsPath: null,
+        modelsStorePath: path.join(root, 'agent', 'models-cache.json'),
+        allowModelNetwork: false, refreshOnCreate: false,
+      });
+      ({ session } = await createAgentSession({ cwd: root, agentDir: path.join(root, 'agent'), resourceLoader: loader, settingsManager, modelRuntime, sessionManager: native, tools, excludeTools }));
       await session.bindExtensions({ onError: error => assert.fail(JSON.stringify(error)) });
       const id = session.sessionId, model = session.model, originalTools = session.getActiveToolNames();
       await session.sendCustomMessage({ customType: 'fixture-history', content: 'Keep this analysis decision', display: false });

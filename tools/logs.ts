@@ -1,15 +1,16 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { truncateTail, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { collectScriptRuns, fmtDuration } from "./shared.js";
+import { readLogTail } from "./log-tail.js";
 
 export function registerLogsTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "sci_logs",
 		label: "Sci Logs",
+		annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 		description: [
 			"Query the script-run manifests produced by tmux executions across all analysis modules.",
 			"Every long-running script run is auto-recorded in <Module>/tmux/manifest.jsonl (timestamp, duration, exit code, script, log path).",
@@ -34,9 +35,11 @@ export function registerLogsTool(pi: ExtensionAPI): void {
 			lines: Type.Optional(Type.Integer({ description: "For action 'log': trailing lines; default 40.", default: 40, minimum: 1, maximum: 2000 })),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			signal?.throwIfAborted();
 			const root = params.cwd ? path.resolve(ctx.cwd, params.cwd) : ctx.cwd;
-			let runs = collectScriptRuns(root);
+			// An explicit log path needs no manifest scan.
+			let runs = params.action === "log" && params.module ? [] : collectScriptRuns(root);
 			if (params.module) runs = runs.filter((r) => r.module === params.module);
 
 			const action = (params.action as string) || "list";
@@ -52,16 +55,16 @@ export function registerLogsTool(pi: ExtensionAPI): void {
 				}
 				const logPath = path.join(root, mod, "tmux", `${params.session}.log`);
 				try {
-					const content = fs.readFileSync(logPath, "utf-8");
 					const n = params.lines ?? 40;
-					const allLines = content.split("\n");
-					const tail = truncateTail(allLines.slice(Math.max(0, allLines.length - n)).join("\n"));
+					const suffix = await readLogTail(logPath, n, signal);
+					const tail = truncateTail(suffix.content);
 					return {
-						content: [{ type: "text", text: `tail -n ${n} ${logPath}\n${"─".repeat(40)}\n${tail.content}${tail.truncated ? `\n[Truncated; full log: ${logPath}]` : ""}` }],
+						content: [{ type: "text", text: `tail -n ${n} ${logPath}\n${"─".repeat(40)}\n${tail.content}${tail.truncated || suffix.truncated ? `\n[Truncated; full log: ${logPath}]` : ""}` }],
 						details: { action: "log" },
 					};
-				} catch {
-					throw new Error(`Cannot read log: ${logPath}`);
+				} catch (error) {
+					signal?.throwIfAborted();
+					throw new Error(`Cannot read log: ${logPath}`, { cause: error });
 				}
 			}
 

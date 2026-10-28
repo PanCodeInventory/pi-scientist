@@ -49,12 +49,14 @@ const defaultRun = (bin: string, args: string[]) => new Promise<string>((resolve
 export function registerHerdrWatch(pi: ExtensionAPI, options: WatchOptions = {}) {
     if (process.env.HERDR_ENV !== "1") return undefined;
     const run = options.run ?? defaultRun;
-    const cwd = options.cwd ?? (() => process.env.PWD ?? process.cwd());
+    let sessionCwd: string | undefined;
+    const cwd = () => options.cwd?.() ?? sessionCwd;
     const seen = new Map<string, string>();
     const notifiedIdle = new Map<string, string>();
     let disposed = false, polling = false;
     const poll = async () => {
-        if (disposed || polling) return;
+        const root = cwd();
+        if (disposed || polling || !root) return;
         polling = true;
         try {
             const output = await run("herdr", ["agent", "list"]);
@@ -68,7 +70,7 @@ export function registerHerdrWatch(pi: ExtensionAPI, options: WatchOptions = {})
             const observedAt = new Date().toISOString();
             const lines: string[] = [];
             for (const e of events) {
-                const dir = path.join(cwd(), ".sci", "runs", e.name);
+                const dir = path.join(root, ".sci", "runs", e.name);
                 let stat: fs.Stats | undefined;
                 try { stat = fs.statSync(path.join(dir, "result.md")); } catch { /* not published yet */ }
                 const ready = !!stat?.isFile() && stat.size > 0;
@@ -92,8 +94,9 @@ export function registerHerdrWatch(pi: ExtensionAPI, options: WatchOptions = {})
     };
     let timer: ReturnType<typeof setInterval> | undefined;
     const stop = () => { disposed = true; clearInterval(timer); };
-    pi.on("session_start", async () => {
+    pi.on("session_start", async (_event, ctx) => {
         if (disposed || timer) return;
+        sessionCwd = ctx.cwd;
         timer = setInterval(() => void poll(), options.intervalMs ?? 20_000);
         timer.unref();
     });

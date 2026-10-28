@@ -2,7 +2,7 @@
 //
 // Two render paths:
 //   - showScientificDialog: a bottom-anchored bounded overlay for scientific
-//     decisions — pinned question, scrollable context (recommendation first,
+//     decisions — pinned question summary, scrollable full question/context (recommendation first,
 //     then principles and briefing), SelectList options, inline custom editor,
 //     and a terminal bell on open so questions are hard to miss
 //   - showFallbackDialog: pi-native select/input/editor fallback used in
@@ -59,6 +59,7 @@ export async function showScientificDialog(
 		let contextContentHeight = 0;
 		let validationMessage = "";
 		let focused = false;
+		let tooSmall = false;
 		let cachedWidth: number | undefined;
 		let cachedHeight: number | undefined;
 		let cachedLines: string[] | undefined;
@@ -166,6 +167,20 @@ export async function showScientificDialog(
 		}
 
 		function handleInput(data: string): void {
+			// Never accept an unseen choice when the terminal cannot fit the controls.
+			if (tooSmall) {
+				if (keybindings.matches(data, "tui.select.cancel")) done(null);
+				return;
+			}
+			// Keep long questions accessible even while entering a free-text answer.
+			if (matchesKey(data, Key.pageUp)) {
+				scrollContext(-1);
+				return;
+			}
+			if (matchesKey(data, Key.pageDown)) {
+				scrollContext(1);
+				return;
+			}
 			if (editMode) {
 				if (keybindings.matches(data, "tui.select.cancel")) {
 					if (options.length > 0) {
@@ -184,23 +199,16 @@ export async function showScientificDialog(
 				return;
 			}
 
-			if (matchesKey(data, Key.pageUp)) {
-				scrollContext(-1);
-				return;
-			}
-			if (matchesKey(data, Key.pageDown)) {
-				scrollContext(1);
-				return;
-			}
 			selectList?.handleInput(data);
 			refresh();
 		}
 
 		function render(width: number): string[] {
 			const terminalHeight = Math.max(1, tui.terminal.rows);
-			if (cachedLines && cachedWidth === width && cachedHeight === terminalHeight) return cachedLines;
-
 			const renderWidth = Math.max(1, width);
+			tooSmall = renderWidth < 20 || terminalHeight < 16;
+			if (tooSmall) return [truncateToWidth("Resize to >=20x16; Esc cancels", renderWidth, "")];
+			if (cachedLines && cachedWidth === width && cachedHeight === terminalHeight) return cachedLines;
 			// Bounded card occupying the lower ~85% of the terminal, bottom-anchored:
 			// the question and options sit where pi's editor and streaming output
 			// live, and the tail of the transcript stays visible above the card.
@@ -234,14 +242,20 @@ export async function showScientificDialog(
 				return color(`─${label}${"─".repeat(Math.max(0, renderWidth - labelWidth - 1))}`);
 			}
 
-			// Pinned header: the question itself never scrolls out of view.
-			const headerLines: string[] = [];
-			addWrapped(headerLines, theme.fg("accent", theme.bold(params.question.trim())), theme.fg("accent", "❯ "));
+			// Pin at most two question lines; put the complete long question in the
+			// scrollable area rather than letting it push the controls off screen.
+			const questionLines: string[] = [];
+			addWrapped(questionLines, theme.fg("accent", theme.bold(params.question.trim())), theme.fg("accent", "❯ "));
+			const headerLines = questionLines.slice(0, 2);
+			const contextLines: string[] = [];
+			if (questionLines.length > 2) {
+				headerLines[1] = truncateToWidth(headerLines[1], renderWidth - 1, "") + "…";
+				addWrapped(contextLines, theme.fg("text", params.question.trim()));
+				contextLines.push("");
+			}
 			headerLines.push("");
 
-			// Scrollable context: the recommended answer comes first so it is visible
-			// without scrolling; principles and briefing follow as supporting depth.
-			const contextLines: string[] = [];
+			// Recommendation precedes the optional scientific background.
 			if (params.recommendation) {
 				addWrapped(contextLines, theme.fg("success", theme.bold("推荐")), " ");
 				addWrapped(contextLines, theme.fg("text", params.recommendation.label ?? params.recommendation.value), "   ");
@@ -269,14 +283,14 @@ export async function showScientificDialog(
 				const editorPrefix = renderWidth > 1 ? " " : "";
 				const editorWidth = Math.max(1, renderWidth - visibleWidth(editorPrefix));
 				for (const line of editor.render(editorWidth)) actionLines.push(`${editorPrefix}${line}`);
-				if (validationMessage) addWrapped(actionLines, theme.fg("warning", validationMessage), " ");
+				if (validationMessage) actionLines.push(theme.fg("warning", truncateToWidth(validationMessage, renderWidth)));
 			} else if (selectList) {
 				addWrapped(actionLines, theme.fg("muted", "请选择"), " ");
 				actionLines.push(...selectList.render(renderWidth));
 			}
 
 			const help = editMode
-				? "Enter 提交 · Shift+Enter 换行 · Esc 返回/取消"
+				? "Enter 提交 · Shift+Enter 换行 · PgUp/PgDn 详情 · Esc 返回/取消"
 				: "↑↓ 选择 · Enter 确认 · PgUp/PgDn 滚动详情 · Esc 取消";
 
 			const contextViewportHeight = Math.max(0, maxDialogHeight - actionLines.length - headerLines.length - 2);
@@ -284,11 +298,12 @@ export async function showScientificDialog(
 			let visibleContext: string[] = [];
 			if (contextViewportHeight > 0) {
 				const needsScroll = contextLines.length > contextViewportHeight;
-				contextPageSize = Math.max(1, contextViewportHeight - (needsScroll ? 1 : 0));
+				const showScrollInfo = needsScroll && contextViewportHeight > 1;
+				contextPageSize = Math.max(1, contextViewportHeight - (showScrollInfo ? 1 : 0));
 				const maxScrollTop = Math.max(0, contextLines.length - contextPageSize);
 				contextScrollTop = Math.max(0, Math.min(contextScrollTop, maxScrollTop));
 				visibleContext = contextLines.slice(contextScrollTop, contextScrollTop + contextPageSize);
-				if (needsScroll) {
+				if (showScrollInfo) {
 					const first = contextScrollTop + 1;
 					const last = Math.min(contextLines.length, contextScrollTop + contextPageSize);
 					const up = contextScrollTop > 0 ? "↑" : " ";
@@ -309,8 +324,8 @@ export async function showScientificDialog(
 			];
 			cachedWidth = width;
 			cachedHeight = terminalHeight;
-			cachedLines = lines;
-			return lines;
+			cachedLines = lines.map(line => truncateToWidth(line, renderWidth, ""));
+			return cachedLines;
 		}
 
 		return {

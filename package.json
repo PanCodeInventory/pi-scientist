@@ -22,7 +22,9 @@
     "tools",
     "skills",
     "docs/conventions.md",
-    "docs/rule-audit.md"
+    "docs/rule-audit.md",
+    "!**/__pycache__/**",
+    "!**/*.pyc"
   ],
   "scripts": {
     "clean": "rm -rf dist",
@@ -48,6 +50,11 @@
     ]
   },
   "devDependencies": {
-    "@types/node": "^25.9.3"
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-tui": "1.4.0",
+    "@types/node": "^25.9.3",
+    "typebox": "1.3.27",
+    "typescript": "6.0.3"
   }
 }

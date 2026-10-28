@@ -6,17 +6,17 @@
 
 ```bash
 pi install /absolute/path/to/pi-scientist
-# 临时加载
-pi -e ./index.ts
+# 临时加载扩展和技能（显式选择技能，不绕过用户的资源配置）
+pi -e ./index.ts --skill ./skills
 ```
 
 ## 提供什么
 
 | 入口 | 用途 |
 |---|---|
-| 19+ 领域与运行技能 | 经 `resources_discover` 自动加载;含 tmux-runner(长计算)与 subagent-delegation(派工约定) |
-| 科学原则、代码风格与交付规范 | 每次回合注入(`SCIENTIST_NO_ENFORCEMENT=1` 只跳过原则,保留代码风格与交付规范) |
-| `ask_user_question` | 询问影响科学意图的未知选择,含推荐项/选项 UI |
+| 20 个领域与运行技能 | 经包的 `pi.skills` 声明加载，遵守技能筛选与 `--no-skills`；含 tmux-runner(长计算)与 subagent-delegation(派工约定) |
+| 科学原则、代码风格与交付规范 | 每次运行通过结构化提示词 sections 注入，不覆盖其他扩展的 sections (`SCIENTIST_NO_ENFORCEMENT=1` 只跳过原则,保留代码风格与交付规范) |
+| `ask_user_question` | 询问影响科学意图的未知选择，含推荐项/选项 UI；仅供模型直接调用，不开放给 codemode 嵌套调用，以保留分支问答记录 |
 | `sci_logs` | 查询各模块 tmux 计算的 manifest.jsonl(跑了什么、成败、耗时、日志) |
 | `/generate-report` | 按需中文自包含 HTML 报告 |
 | `/publication` | 按需一图一 Notebook,实际执行验证 |
@@ -45,10 +45,15 @@ pi -e ./index.ts
 
 共享代码风格、目录、图形与复现规范见 [工作规范](docs/conventions.md)。历史审计文件与未实施的 `PROJECT-MEMORY-DESIGN.md` 不作为现行运行规则。
 
+本地开发/测试依赖固定为 Pi `1.4.0`（与当前使用的宿主版本对齐），TypeBox 与 TypeScript 也显式声明在 `devDependencies`；发布用的宿主 `peerDependencies` 保持 `*`，不捆绑 Pi。使用锁文件复现测试环境：
+
 ```bash
+npm ci --ignore-scripts
 npm run typecheck
 npm test
 npm pack --dry-run
 ```
 
-测试使用本地数据夹具,不调用付费模型。
+测试使用本地数据夹具,不调用付费模型。SDK 测试使用隔离的临时凭据/模型缓存路径，并关闭模型目录联网刷新。覆盖真实源码加载、技能筛选/reload、提示词扩展组合、codemode 工具可达性、问答错误显示、窗口缩放及大日志截尾。
+
+交互弹窗保留两行问题摘要，完整长问题可用 PgUp/PgDn 滚动查看（输入答案时也可用）；小于 20 列 × 16 行时暂停选项提交，扩大窗口后继续，Esc 始终可以取消。`sci_logs log` 异步读取最多 64 KiB 的日志尾部，再按 50KB/2000 行限制输出；截断时提供原日志路径。
