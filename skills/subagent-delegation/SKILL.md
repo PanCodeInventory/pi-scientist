@@ -45,12 +45,16 @@ herdr pane split --pane <该窗口任一 pane_id> --direction right --cwd "<anal
 # 3) 每个 pane 起一个命名 agent:agent 名 = 细分任务名
 RUN=<analysis>/.sci/runs/<worker-slug>; mkdir -p "$RUN"   # 然后写 brief.md
 herdr agent start <worker-slug> --kind pi --pane <pane_id> -- --session "$RUN/session.jsonl"
-herdr agent prompt <worker-slug> "读 $RUN/brief.md 并完成。完成或受阻时把结论写入 $RUN/result.md。"
+# 4) 在派工方的 bash 中绑定归属(脚本路径相对于本 skill 目录,执行时换成绝对路径)
+#    仅 agent start 成功且 Pi 已报告 session 身份后绑定;失败就先检查,不要继续 prompt
+python3 <本skill绝对路径>/scripts/bind-worker.py <pane_id> "$RUN"
+# 5) 按已确认的 pane ID 发任务,不要只凭全局可重用的 agent 名定位
+herdr agent prompt <pane_id> "读 $RUN/brief.md 并完成。完成或受阻时把结论写入 $RUN/result.md。"
 ```
 
 每个新任务用新的 worker-slug;不要把上次的 result.md/released 当作新任务状态。
 
-**命名规则**:agent 名只能是 `[a-z][a-z0-9_-]{0,31}`——细分任务名为中文时转小写 kebab-case 英文名(如 `atlas-build`、`atlas-review`),目录也用这个 slug;中文任务名放 tab label。agent 只有经 `agent start <name>` 启动才是命名 agent,这也是 watcher 识别子代理的方式。
+**命名规则**:agent 名只能是 `[a-z][a-z0-9_-]{0,31}`——细分任务名为中文时转小写 kebab-case 英文名(如 `atlas-build`、`atlas-review`),目录也用这个 slug;中文任务名放 tab label。命名只用于显示,不代表派工归属。`bind-worker.py` 会核对 workspace、派工 pane/当前 Pi session、worker pane/session.jsonl 及其原生 session ID,再将绑定原子写入**派工会话启动目录**的 `.sci/herdr-watch/<dispatcher-session-id>/<worker-slug>.json`。run 目录可以在分析子目录内,回告会读取绑定的绝对路径。不要手写/复制绑定,也不要在 worker pane 内代派工方执行绑定。
 
 全部用 herdr 原生命令组合,不需要任何自定义工具。要点:
 - 动手前确认在 Herdr 内:`test "${HERDR_ENV:-}" = 1`(不在则走 tmux 降级路线)
@@ -59,8 +63,9 @@ herdr agent prompt <worker-slug> "读 $RUN/brief.md 并完成。完成或受阻�
 
 ## 监看与收取
 
-- **自动**:本扩展在 Herdr 内运行时自带 watcher,子代理 `working→idle/done`、进入 `blocked`、或 agent 消失时回告观测时间和 result.md 快照。同一结果版本的重复 idle 被去重;CLI 错误不当作全体消失。回告可能排队延迟,已验收/释放的旧通知直接忽略;没有通知也不能证明任务仍在运行。
-- **手动**:`herdr agent get <worker-slug>`;`herdr agent read <worker-slug> --source recent-unwrapped --lines 80`;或按布局规范直接切到任务 tab 亲眼看。
+- **自动**:仅监看显式绑定到**本 workspace + 派工 pane + 当前 Pi session ID** 的 worker;不会按全局 agent 名、项目目录、当前焦点或同 workspace 猜测归属。子代理 `working→idle/done`、进入 `blocked`、或已确认身份的 agent 消失时回告观测时间、pane、run 路径和 result.md 快照。同一结果版本的重复 idle 被去重;CLI 错误不当作全体消失。回告可能排队延迟,已验收/释放的旧通知直接忽略;没有通知也不能证明任务仍在运行。
+- **旧任务迁移**:更新后各派工会话执行 `/reload` 才会停止旧版全局 watcher。未绑定任务保持静默,不会自动认领;需要回告时,在真正的派工会话中核对 worker pane 和 run 后运行上述绑定脚本。`/new`、切换会话或换 pane 不继承其他会话的绑定;同一会话原 pane `/reload` 可恢复绑定。首次观测只建立基线,不补发历史事件。
+- **手动**:`herdr agent get <pane_id>`;`herdr agent read <pane_id> --source recent-unwrapped --lines 80`;或按布局规范直接切到任务 tab 亲眼看。
 
 ## 收取与返工
 
@@ -69,7 +74,7 @@ herdr agent prompt <worker-slug> "读 $RUN/brief.md 并完成。完成或受阻�
 # 需要返工/补充(同会话继续,上下文保留):先归档旧哨兵,避免误认本轮完成
 mv "$RUN/result.md" "$RUN/result.previous.md"
 rm -f "$RUN/released"
-herdr agent prompt <worker-slug> "补充:……(修正后继续写 result.md)"
+herdr agent prompt <pane_id> "补充:……(修正后继续写 result.md)"
 # 验收通过/放弃后释放:先记下主动释放意图,避免 watcher 将其作为异常提醒
 # pane close 连进程一起回收(pi 无自退命令,不要 prompt 它 "/exit")
 touch "$RUN/released"

@@ -26,10 +26,12 @@ pi -e ./index.ts --skill ./skills
 
 不再内置协调工具与 worker/leader 模式。需要把工作交给另一个 pi 会话时,按 **subagent-delegation** skill 的约定执行:
 
-- **子代理用 herdr(主线,需派工方在 Herdr 内)**:固定布局——当前 workspace 下每个整体任务一个 tab(label = 任务名),窗口内每个 worker 一个 pane(agent 名 = 细分任务名),全部用 `herdr tab/pane/agent` 原生命令;本会话在 Herdr 内时,扩展自带 watcher,命名子代理 `idle/done`、`blocked` 或退出时会自动回告(含 result.md 是否就绪)
+- **子代理用 herdr(主线,需派工方在 Herdr 内)**:固定布局——当前 workspace 下每个整体任务一个 tab(label = 任务名),窗口内每个 worker 一个 pane(agent 名 = 细分任务名),用 `herdr tab/pane/agent` 原生命令启动,再用 skill 自带 `bind-worker.py` 显式绑定派工归属;watcher 仅向绑定的 workspace + pane + Pi session 回告 worker 的 `idle/done`、`blocked` 或退出(含 result.md 是否就绪),不会仅凭名字监听全局 agent
 - **tmux 为降级路线**(不在 Herdr 内时):`tmux new-session` 起裸 `pi --session` + 哨兵文件循环等待,无自动回告
 
 两条路线共享同一约定:worker 完成必须写 `.sci/runs/<task>/result.md`(哨兵),验收由派工方亲自读产物、核对标准,不接受 worker 自述。详见 `skills/subagent-delegation/SKILL.md`。
+
+**通知隔离升级**:已打开的各 Pi 会话需 `/reload` 才能停掉旧版全局 watcher。旧任务不自动认领,需在真正的派工会话内用 skill 的绑定脚本登记;未绑定或身份不完整时不自动投递。同 workspace/同项目的其他 pane 和新 Pi 会话也不会接收。绑定保存在派工会话 cwd 下的 `.sci/herdr-watch/<session-id>/`,worker 改名/换 pane/换会话不会被按同名自动接管。
 
 ## 长计算
 

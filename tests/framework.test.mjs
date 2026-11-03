@@ -108,30 +108,25 @@ test('herdr watch diffs settled/blocked/gone transitions without first-sight or 
   assert.deepEqual(diffAgents(new Map([['sci-a', 'working']]), new Map([['sci-a', 'blocked']])), [{ name: 'sci-a', status: 'blocked', previous: 'working' }]);
 });
 
-test('herdr watch notifies exact transitions and stays inert without HERDR_ENV', async () => {
+test('herdr watch stays inert without HERDR_ENV or explicit session-owned bindings', async () => {
   const prior = process.env.HERDR_ENV;
   delete process.env.HERDR_ENV;
   assert.equal(registerHerdrWatch(harness().api), undefined);
   process.env.HERDR_ENV = '1';
+  let w;
   try {
     const h = harness();
-    const outputs = [
-      JSON.stringify({ result: { agents: [{ name: 'sci-x', agent_status: 'working' }] } }),
-      JSON.stringify({ result: { agents: [{ name: 'sci-x', agent_status: 'idle' }] } }),
-      JSON.stringify({ result: { agents: [] } }),
-      'not json',
-    ];
-    let i = 0;
-    const w = registerHerdrWatch(h.api, { run: async () => outputs[Math.min(i++, outputs.length - 1)], cwd: () => '/nonexistent' });
-    assert.ok(w);
-    await w.poll(); assert.equal(h.messages.length, 0);          // baseline, first sight is silent
-    await w.poll(); assert.equal(h.messages.length, 1);          // working -> idle
-    assert.match(h.messages.at(-1)[1].content, /sci-x: idle/);
-    await w.poll(); assert.equal(h.messages.length, 2);          // gone
-    assert.match(h.messages.at(-1)[1].content, /sci-x 已消失/);
-    await w.poll(); assert.equal(h.messages.length, 2);          // CLI failure: no noise
-    w.stop();
-  } finally { if (prior === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = prior; }
+    let calls = 0;
+    w = registerHerdrWatch(h.api, { run: async () => { calls++; throw new Error('must not query global agents'); } });
+    await w.poll();
+    await h.hooks.get('session_start')[0]({}, { cwd: '/nonexistent', sessionManager: { getSessionId: () => 'unbound-session' } });
+    await w.poll();
+    assert.equal(calls, 0);
+    assert.equal(h.messages.length, 0);
+  } finally {
+    w?.stop();
+    if (prior === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = prior;
+  }
 });
 
 test('question schema accepts only a question, without a contract ceremony', () => {
