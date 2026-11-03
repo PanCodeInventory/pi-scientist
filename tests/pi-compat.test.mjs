@@ -9,6 +9,8 @@ import {
   ModelRuntime, SessionManager, SettingsManager,
 } from '@earendil-works/pi-coding-agent';
 import scientist from '../dist/index.js';
+// Pi's renderer is internal; use the installed host implementation, not a prompt mock.
+const { buildSystemPrompt } = await import(new URL('./core/system-prompt.js', import.meta.resolve('@earendil-works/pi-coding-agent')));
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
 async function withSession(options, check) {
@@ -71,17 +73,54 @@ test('real source loading honors package skills, empty filters, noSkills and exp
         extensionFactories: [], additionalExtensionPaths: [path.join(packageRoot, 'index.ts')],
         noSkills: scenario.noSkills, additionalSkillPaths: scenario.additionalSkillPaths,
       },
-    }, async (session, loader) => {
-      const check = () => {
+    }, async (session, loader, root) => {
+      const check = async () => {
         assert.ok(session.getActiveToolNames().includes('ask_user_question'));
         const { skills, diagnostics } = loader.getSkills();
         assert.equal(skills.filter(skill => skill.filePath.startsWith(path.join(packageRoot, 'skills') + path.sep)).length, scenario.expected);
         if (scenario.noSkills) assert.equal(skills.length, scenario.expected);
         assert.deepEqual(diagnostics.filter(diagnostic => diagnostic.path?.startsWith(packageRoot)), []);
+        const result = await session.extensionRunner.emitBeforeAgentStart({ messageType: 'user', prompt: 'fixture' }, { cwd: root, skills, selectedTools: session.getActiveToolNames() });
+        const guidance = result.systemPromptOptions.sections['scientist-resources'];
+        if (scenario.expected) assert.doesNotMatch(guidance, /not advertised/);
+        else assert.match(guidance, /not advertised in this run: visualization, tmux-runner/);
       };
-      check();
+      await check();
       await session.reload();
-      check();
+      await check();
+    });
+  }
+});
+
+test('project extension-only loading reproduces missing skills; package loading repairs the actual prompt', async () => {
+  for (const kind of ['extensions', 'packages']) {
+    await withSession({
+      settings: { [kind]: [packageRoot] },
+      loader: { noExtensions: false, noSkills: false, extensionFactories: [] },
+    }, async (session, loader, root) => {
+      for (let pass = 0; pass < 2; pass++) {
+        assert.deepEqual(loader.getExtensions().errors, []);
+        assert.equal(loader.getExtensions().extensions.length, 1);
+        assert.ok(session.getActiveToolNames().includes('sci_logs'));
+        const result = await session.extensionRunner.emitBeforeAgentStart({ messageType: 'user', prompt: 'Inspect context' }, { cwd: root, skills: loader.getSkills().skills, selectedTools: session.getActiveToolNames() });
+        const options = result.systemPromptOptions;
+        const bundled = options.skills.filter(s => s.filePath.startsWith(path.join(packageRoot, 'skills') + path.sep));
+        assert.equal(bundled.length, kind === 'packages' ? 20 : 0);
+        assert.equal(bundled.filter(s => !s.disableModelInvocation).length, kind === 'packages' ? 19 : 0);
+        const prompt = buildSystemPrompt(options);
+        if (kind === 'packages') {
+          assert.match(prompt, /<name>visualization<\/name>/);
+          assert.match(prompt, /<name>tmux-runner<\/name>/);
+          assert.ok(prompt.includes(path.join(packageRoot, 'skills/visualization/SKILL.md')));
+          assert.doesNotMatch(prompt, /<name>publication<\/name>/);
+          assert.doesNotMatch(options.sections['scientist-resources'], /not advertised/);
+        } else {
+          assert.doesNotMatch(prompt, /<name>visualization<\/name>|<name>tmux-runner<\/name>/);
+          assert.match(options.sections['scientist-resources'], /not advertised in this run: visualization, tmux-runner/);
+        }
+        assert.equal(options.sections['scientist-learning'], undefined, 'disabled learning must not mandate delivery registration');
+        if (pass === 0) await session.reload();
+      }
     });
   }
 });

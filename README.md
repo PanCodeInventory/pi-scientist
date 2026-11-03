@@ -10,6 +10,24 @@ pi install /absolute/path/to/pi-scientist
 pi -e ./index.ts --skill ./skills
 ```
 
+项目级配置应放在 `.pi/settings.json` 的 `packages` 中（或在项目内执行 `pi install --local /absolute/path/to/pi-scientist`）：
+
+```json
+{
+  "packages": ["/absolute/path/to/pi-scientist"]
+}
+```
+
+**只把目录写入 `extensions` 会加载代码和规范，但不会加载包的 `pi.skills`。** 请替换该条目，不要同时重复注册。修改后执行 `/reload`。
+
+### 上下文与技能可用性
+
+- 科学原则、用户规范是常驻的结构化 sections；技能只注入名称、描述、位置，正文按需读取，不整包塞入上下文。
+- 完整包有 20 个技能，其中 `publication` 仅显式调用，默认模型目录显示另外 19 个。`tmux-runner` 是带 shell wrapper 的技能，不是独立工具。
+- 每轮按 Pi 实际提供的技能和读取工具检查 `visualization` / `tmux-runner`。缺失时在上下文注明、在 UI 告警；受影响的步骤先解决依赖，不猜路径、不绕过过滤、不改变既有规范。相同缺失状态不反复弹窗。
+- 继续遵守 `skills: []`、排除规则、`--no-skills` 和 `disable-model-invocation`。不会通过 `resources_discover` 偷偷补回已禁用技能。
+- 检查时区分“技能目录已注入”和“正文已读”，以及“项目说明已作为上下文注入”和“主动读取过文件”；不要以模型口头自述代替实际资源检查。`sci_delivery` 的交付要求仅在项目学习已启用且工具可用时注入。
+
 ## 提供什么
 
 | 入口 | 用途 |
@@ -61,6 +79,6 @@ npm test
 npm pack --dry-run
 ```
 
-默认测试使用本地数据夹具，不调用付费模型。`npm run test:learning-ablation` 做无模型调用的机制消融；`npm run test:learning-live` 是显式付费的三条件小型实验，`npm run test:learning-topics` 验证多主题创建与同类更新；两者使用 `PI_PROVIDER` / `PI_MODEL`，不属于默认测试。SDK 单元测试使用隔离的临时凭据/模型缓存路径，并关闭模型目录联网刷新。覆盖真实源码加载、技能筛选/reload、提示词扩展组合、codemode 工具可达性、问答错误显示、窗口缩放及大日志截尾。
+默认测试使用本地数据夹具，不调用付费模型。`npm run test:learning-ablation` 做无模型调用的机制消融；`npm run test:learning-live` 是显式付费的三条件小型实验，`npm run test:learning-topics` 验证多主题创建与同类更新；两者使用 `PI_PROVIDER` / `PI_MODEL`，不属于默认测试。SDK 单元测试使用隔离的临时凭据/模型缓存路径，并关闭模型目录联网刷新。覆盖项目 `extensions` 漏载复现与 `packages` 修复、实际技能目录/正文分离、技能筛选/reload、提示词扩展组合、codemode 工具可达性、问答错误显示、窗口缩放及大日志截尾。
 
 交互弹窗保留两行问题摘要，完整长问题可用 PgUp/PgDn 滚动查看（输入答案时也可用）；小于 20 列 × 16 行时暂停选项提交，扩大窗口后继续，Esc 始终可以取消。`sci_logs log` 异步读取最多 64 KiB 的日志尾部，再按 50KB/2000 行限制输出；截断时提供原日志路径。
