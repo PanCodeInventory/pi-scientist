@@ -23,6 +23,8 @@
     "skills",
     "docs/conventions.md",
     "docs/rule-audit.md",
+    "docs/project-skill-learning.md",
+    "docs/project-skill-learning-cases.md",
     "!**/__pycache__/**",
     "!**/*.pyc"
   ],
@@ -31,6 +33,9 @@
     "build": "npm run clean && tsc",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs",
+    "test:learning-ablation": "npm run build && node tests/learning-ablation.mjs",
+    "test:learning-live": "npm run build && node tests/learning-live-ablation.mjs --live",
+    "test:learning-topics": "npm run build && node tests/learning-live-ablation.mjs --live --topics",
     "prepack": "npm run build"
   },
   "author": "PanChongshi",

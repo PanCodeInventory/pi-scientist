@@ -1,6 +1,6 @@
 # pi-scientist
 
-面向生物信息分析的 Pi 能力包:科学工作原则、共享交付规范、领域与运行技能,以及按需调用 tmux / Herdr 的子代理派工约定。无内置角色、模式或协调状态机;派工是纯文本约定,不依赖扩展工具。
+面向生物信息分析的 Pi 能力包:科学工作原则、共享交付规范、领域与运行技能,以及按需调用 tmux / Herdr 的分析子代理派工约定。无内置分析角色、模式或协调状态机；另提供默认关闭的项目技能学习：从交付点派生受限的后台复盘会话。
 
 ## 加载方式
 
@@ -21,6 +21,7 @@ pi -e ./index.ts --skill ./skills
 | `/generate-report` | 按需中文自包含 HTML 报告 |
 | `/publication` | 按需一图一 Notebook,实际执行验证 |
 | `/reflect` | 结合真实结果讨论方法与局限 |
+| `/sci-learn`、`sci_delivery` | 可选项目技能学习：启用后登记交付、克隆活动分支、后台复盘并增量更新项目 skill |
 
 ## 子代理派工
 
@@ -47,6 +48,10 @@ pi -e ./index.ts --skill ./skills
 
 共享代码风格、目录、图形与复现规范见 [工作规范](docs/conventions.md)。历史审计文件与未实施的 `PROJECT-MEMORY-DESIGN.md` 不作为现行运行规则。
 
+项目 skill 学习已实现，默认关闭。在明确的分析根目录执行 `/sci-learn on` 启用；主代理在交付前调用 `sci_delivery`，正常结束后自动克隆当前活动分支，主会话不切换。复盘按分析类型匹配已有主题，按需读取相关 skill，必要时创建新主题；一个项目可有多个独立 skill，一次交付也可更新多个。目录和 `name` 直接使用分析主题，例如 `.pi/skills/sample-alignment/SKILL.md`，不加冗余前缀。复盘没有 shell/写文件工具；宿主逐主题检查来源、风险标记和基线后发布，不修改跨项目技能。`/sci-learn reflect` 可补做，`status` 查看主题目录及记录，`off` 停止学习，`rollback <run-id> [topic]` 按主题回退。新技能在下次加载或 `/reload` 后发现，遵守原有资源筛选。
+
+后台调用有模型成本，完整复盘历史保存在项目 `.sci/learning/`，不要公开提交；关闭/reload 主会话会取消后台复盘。本版不是独立科学审核器。详见[实现与边界](docs/project-skill-learning.md)、[验收及消融](docs/project-skill-learning-cases.md)。
+
 本地开发/测试依赖固定为 Pi `1.4.0`（与当前使用的宿主版本对齐），TypeBox 与 TypeScript 也显式声明在 `devDependencies`；发布用的宿主 `peerDependencies` 保持 `*`，不捆绑 Pi。使用锁文件复现测试环境：
 
 ```bash
@@ -56,6 +61,6 @@ npm test
 npm pack --dry-run
 ```
 
-测试使用本地数据夹具,不调用付费模型。SDK 测试使用隔离的临时凭据/模型缓存路径，并关闭模型目录联网刷新。覆盖真实源码加载、技能筛选/reload、提示词扩展组合、codemode 工具可达性、问答错误显示、窗口缩放及大日志截尾。
+默认测试使用本地数据夹具，不调用付费模型。`npm run test:learning-ablation` 做无模型调用的机制消融；`npm run test:learning-live` 是显式付费的三条件小型实验，`npm run test:learning-topics` 验证多主题创建与同类更新；两者使用 `PI_PROVIDER` / `PI_MODEL`，不属于默认测试。SDK 单元测试使用隔离的临时凭据/模型缓存路径，并关闭模型目录联网刷新。覆盖真实源码加载、技能筛选/reload、提示词扩展组合、codemode 工具可达性、问答错误显示、窗口缩放及大日志截尾。
 
 交互弹窗保留两行问题摘要，完整长问题可用 PgUp/PgDn 滚动查看（输入答案时也可用）；小于 20 列 × 16 行时暂停选项提交，扩大窗口后继续，Esc 始终可以取消。`sci_logs log` 异步读取最多 64 KiB 的日志尾部，再按 50KB/2000 行限制输出；截断时提供原日志路径。

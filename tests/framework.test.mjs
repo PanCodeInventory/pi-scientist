@@ -30,8 +30,8 @@ const execute = (tool, params, ctx = context, signal = new AbortController().sig
 // No calls to a model or external service are made by this suite.
 test('extension preserves tool selection and separates conventions from strategy', async () => {
   const h = harness(); scientist(h.api);
-  assert.deepEqual([...h.tools.keys()].sort(), ['ask_user_question', 'sci_logs']);
-  assert.deepEqual([...h.commands.keys()].sort(), ['generate-report', 'publication', 'reflect', 'science-contract']);
+  assert.deepEqual([...h.tools.keys()].sort(), ['ask_user_question', 'sci_delivery', 'sci_logs']);
+  assert.deepEqual([...h.commands.keys()].sort(), ['generate-report', 'publication', 'reflect', 'sci-learn', 'science-contract']);
   const [hook] = h.hooks.get('before_agent_start');
   const event = { systemPromptOptions: { sections: { unrelated: 'keep me' } } };
   assert.equal(await hook(event), undefined, 'must not force a complete prompt replacement');
