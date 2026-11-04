@@ -1,6 +1,6 @@
 ---
 name: subagent-delegation
-description: "Dispatch bounded analysis work to a separate pi session as a Herdr agent pane (requires HERDR_ENV=1; tmux is the fallback route when not inside Herdr). Use when delegating a sizable, well-scoped task to a subagent, running concurrent analysis lines, or reusing a live session for follow-up instructions. Completion is declared by a result file, never inferred from screen appearance; long-running computation inside a task still uses the tmux-runner skill."
+description: "Dispatch bounded analysis work through sci_delegate: Jev selects difficulty and vision requirements, then launches a separate pi session as a Herdr agent pane (requires HERDR_ENV=1; tmux is the fallback route when not inside Herdr). Use when delegating a sizable, well-scoped task to a subagent, running concurrent analysis lines, or reusing a live session for follow-up instructions. Completion is declared by a result file, never inferred from screen appearance; long-running computation inside a task still uses the tmux-runner skill."
 ---
 
 # 子代理派工(herdr 主线,tmux 降级)
@@ -19,6 +19,7 @@ description: "Dispatch bounded analysis work to a separate pi session as a Herdr
 ```
 <analysis>/.sci/runs/<task-slug>/
   brief.md        # 派工前写:任务、输入、已确认决定、可写目录、验收标准、长计算会话名
+  dispatch.json   # sci_delegate 自动写:分类、路由、启动阶段与会话身份;用于排查部分失败
   result.md       # worker 完成时写(哨兵)
   session.jsonl   # worker 的原生会话文件(续接/复盘用)
 ```
@@ -31,6 +32,22 @@ brief 模板要点:一句话目标;输入绝对路径;已确认决定;write scop
 
 `result.md` 应明确 completed / blocked 及未通过项;文件存在只是可以收取,不代表成功。
 
+## Jev 路由与派工
+
+新 worker 使用 **sci_delegate** 一次完成:读取 brief → Jev 分类 → 固定路由 → 启动 → Herdr 归属绑定 → 发任务。不手选模型、不自行拼 pi 启动命令。先写好 brief,把方法是否已定、需要哪些判断、是否必须直接看图写清楚;brief 不超过 48 KiB,分类时不要再改。Jev 只看 brief,不读取主会话、原始数据或图片本身。
+
+Jev 分别判断 `difficulty=easy/mid/hard` 与 `needsVision`;运行耗时不等于推理难度。直接检查截图、图形布局或组织形态时设置 `requiresVision=true` 强制视觉能力;仅生成图片或处理数值表不算。false 不会覆盖 Jev 的正向视觉判断。
+
+| 难度 | 无 vision | 有 vision |
+|---|---|---|
+| easy | ollama-cloud/minimax-m3.1-flash · low | zai-coding-cn/glm-5.3-flash · low |
+| mid | zai-coding-cn/glm-5.3 · high | ollama-cloud/deepseek-v4.1-flash:1017 · high |
+| hard | openai-codex/gpt-6-astra · high | openai-codex/gpt-6-astra · high |
+
+分类失败、模型不可用或能力不匹配时不会静默降档/换 provider。`dispatch.json` 是一次启动的收据,不是任务状态系统,不代替 Herdr/result.md。启动前失败:查明原因后用新 slug 派工;启动/绑定/提交途中失败:先查收据、pane、session 和绑定,不盲目重跑工具或重发 prompt。`agent_prompt_stalled` 也可能已提交。工具不会自动关闭可能仍在工作的 worker。
+
+工具用 Pi 原生 SessionManager 写入一条“等待后续任务”的初始化用户消息以落盘会话身份,不产生额外模型调用;绑定成功后才发真实任务。新派工分类一次;同会话普通补充不重新分类或换模型。实质改变范围/视觉需求时重新拆成新任务,先处理旧 worker 的写入边界。
+
 ## 布局规范(固定,不可省略)
 
 每发起一次整体任务,在**当前 workspace 下新开一个 tab(window)**,tab 的 label 就是**本次整体任务名称**(可中文,自由命名);**每个 worker 一个 pane**,worker 的 agent 名就是**细分任务名**(pane/侧栏里显示的就是它)。一眼就能回答"哪个任务在哪、谁在跑"。
@@ -42,21 +59,32 @@ herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "<analysis>" --label "<
 # 2) 第一个 worker 直接用 root pane;之后每个 worker 在窗口内 split 出新 pane
 herdr pane split --pane <该窗口任一 pane_id> --direction right --cwd "<analysis>" --no-focus
 #    → 方向看当前布局,宽的向右、高的向下;均 --no-focus,不抢用户焦点
-# 3) 每个 pane 起一个命名 agent:agent 名 = 细分任务名
-RUN=<analysis>/.sci/runs/<worker-slug>; mkdir -p "$RUN"   # 然后写 brief.md
-herdr agent start <worker-slug> --kind pi --pane <pane_id> -- --session "$RUN/session.jsonl"
-# 4) 在派工方的 bash 中绑定归属(脚本路径相对于本 skill 目录,执行时换成绝对路径)
-#    仅 agent start 成功且 Pi 已报告 session 身份后绑定;失败就先检查,不要继续 prompt
+# 3) 准备 run 和 brief;worker 名取自目录末级 slug
+RUN=<analysis>/.sci/runs/<worker-slug>; mkdir -p "$RUN"
+# 用 write 写 $RUN/brief.md,然后调用下面的 sci_delegate 工具
+```
+
+```json
+{
+  "cwd": "<analysis绝对路径>",
+  "runDir": "<analysis绝对路径>/.sci/runs/<worker-slug>",
+  "paneId": "<新worker的pane_id>",
+  "requiresVision": false
+}
+```
+
+工具名为 `sci_delegate`。成功后已完成启动、绑定和发任务,不要再执行一次 `agent prompt`。同一整体任务的后续 worker 在同 tab split 新 pane 后分别调用。工具返回的 pane/session/run 身份用于后续监看,不用全局 agent 名猜归属。
+
+```bash
+# 已有旧 worker 或部分启动失败时,仅在真正派工会话核对身份后手动修复绑定:
 python3 <本skill绝对路径>/scripts/bind-worker.py <pane_id> "$RUN"
-# 5) 按已确认的 pane ID 发任务,不要只凭全局可重用的 agent 名定位
-herdr agent prompt <pane_id> "读 $RUN/brief.md 并完成。完成或受阻时把结论写入 $RUN/result.md。"
 ```
 
 每个新任务用新的 worker-slug;不要把上次的 result.md/released 当作新任务状态。
 
 **命名规则**:agent 名只能是 `[a-z][a-z0-9_-]{0,31}`——细分任务名为中文时转小写 kebab-case 英文名(如 `atlas-build`、`atlas-review`),目录也用这个 slug;中文任务名放 tab label。命名只用于显示,不代表派工归属。`bind-worker.py` 会核对 workspace、派工 pane/当前 Pi session、worker pane/session.jsonl 及其原生 session ID,再将绑定原子写入**派工会话启动目录**的 `.sci/herdr-watch/<dispatcher-session-id>/<worker-slug>.json`。run 目录可以在分析子目录内,回告会读取绑定的绝对路径。不要手写/复制绑定,也不要在 worker pane 内代派工方执行绑定。
 
-全部用 herdr 原生命令组合,不需要任何自定义工具。要点:
+布局和后续管理仍用 herdr 原生命令;只有新 worker 的路由与启动走 sci_delegate。要点:
 - 动手前确认在 Herdr 内:`test "${HERDR_ENV:-}" = 1`(不在则走 tmux 降级路线)
 - CLI 错误走 JSON 的 `error` 字段而 **exit code 仍为 0**;脚本化判断必须 parse JSON
 - `agent prompt` 报 `agent_prompt_stalled` = 提交了 5 秒无活动,先 `agent get`/`agent read` 查看,不要重发
@@ -89,10 +117,8 @@ herdr pane close <pane_id>
 
 ```bash
 RUN=<analysis>/.sci/runs/<worker-slug>
-tmux new-session -d -s "<worker-slug>" -c "<analysis>"
-tmux send-keys -t "<worker-slug>" "pi --session '$RUN/session.jsonl'" Enter
-sleep 5
-tmux send-keys -t "<worker-slug>" "读 '$RUN/brief.md' 并完成。完成(或受阻)时把结论写入 '$RUN/result.md'。" Enter
+# 写 brief 后调用 sci_delegate({cwd: <analysis>, runDir: <RUN>}),不传 paneId。
+# 工具按相同路由在独立 tmux 会话启动 pi 并传入任务,不提供自动回告。
 # 需要结果时用 bash 挂起自己:
 while [ ! -s "$RUN/result.md" ] && tmux has-session -t "<worker-slug>" 2>/dev/null; do sleep 30; done
 ```

@@ -30,7 +30,7 @@ const execute = (tool, params, ctx = context, signal = new AbortController().sig
 // No calls to a model or external service are made by this suite.
 test('extension preserves tool selection and separates conventions from strategy', async () => {
   const h = harness(); scientist(h.api);
-  assert.deepEqual([...h.tools.keys()].sort(), ['ask_user_question', 'sci_delivery', 'sci_logs']);
+  assert.deepEqual([...h.tools.keys()].sort(), ['ask_user_question', 'sci_delegate', 'sci_delivery', 'sci_logs']);
   assert.deepEqual([...h.commands.keys()].sort(), ['generate-report', 'publication', 'reflect', 'sci-learn', 'science-contract']);
   const [hook] = h.hooks.get('before_agent_start');
   const event = { systemPromptOptions: { sections: { unrelated: 'keep me' } } };
@@ -235,7 +235,7 @@ test('actual Pi SDK loads the extension and preserves conversation identity with
       await session.sendCustomMessage({ customType: 'fixture-history', content: 'Known prior design decision', display: false });
       assert.ok(session.messages.some(m => m.customType === 'fixture-history'));
       for (const removed of ['sci_dispatch', 'sci_tasks', 'sci_sessions', 'sci_handoff']) assert.ok(!session.getActiveToolNames().includes(removed), removed);
-      for (const kept of ['sci_logs', 'ask_user_question']) if (!tools || tools.includes(kept)) assert.ok(session.getActiveToolNames().includes(kept) || tools, kept);
+      for (const kept of ['sci_logs', 'sci_delegate', 'ask_user_question']) if (!tools || tools.includes(kept)) assert.ok(session.getActiveToolNames().includes(kept) || tools, kept);
       assert.equal(session.sessionId, id); assert.equal(session.model, model);
       if (tools) assert.deepEqual(session.getActiveToolNames(), ['read']);
     } finally {
@@ -247,7 +247,7 @@ test('actual Pi SDK loads the extension and preserves conversation identity with
 
 test('actual Pi preserves tool filters and history across reload without mode machinery', async () => {
   const { createAgentSession, DefaultResourceLoader, SettingsManager, SessionManager, ModelRuntime } = await import('@earendil-works/pi-coding-agent');
-  for (const { tools, excludeTools } of [{}, { tools: ['read'] }, { excludeTools: ['sci_logs'] }]) {
+  for (const { tools, excludeTools } of [{}, { tools: ['read'] }, { excludeTools: ['sci_logs'] }, { excludeTools: ['sci_delegate'] }]) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sci-mode-test-'));
     const settingsManager = SettingsManager.inMemory(), native = SessionManager.inMemory(root);
     const loader = new DefaultResourceLoader({ cwd: root, agentDir: path.join(root, 'agent'), settingsManager, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [scientist] });
@@ -264,6 +264,10 @@ test('actual Pi preserves tool filters and history across reload without mode ma
       const id = session.sessionId, model = session.model, originalTools = session.getActiveToolNames();
       await session.sendCustomMessage({ customType: 'fixture-history', content: 'Keep this analysis decision', display: false });
       assert.equal(session.getActiveToolNames().includes('sci_logs'), (!tools || tools.includes('sci_logs')) && !excludeTools?.includes('sci_logs'));
+      assert.equal(session.getActiveToolNames().includes('sci_delegate'), (!tools || tools.includes('sci_delegate')) && !excludeTools?.includes('sci_delegate'));
+      if (session.getActiveToolNames().includes('sci_delegate')) assert.equal(session.getToolDefinition('sci_delegate').exposure, 'model-only');
+      else assert.equal(session.getToolDefinition('sci_delegate'), undefined);
+      assert.ok(!session.getCallableToolNames().includes('sci_delegate'));
       await session.reload();
       assert.deepEqual(session.getActiveToolNames().sort(), originalTools.sort());
       assert.equal(session.sessionId, id); assert.equal(session.model, model);

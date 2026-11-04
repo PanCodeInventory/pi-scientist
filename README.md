@@ -36,6 +36,7 @@ pi -e ./index.ts --skill ./skills
 | 科学原则、代码风格与交付规范 | 每次运行通过结构化提示词 sections 注入，不覆盖其他扩展的 sections (`SCIENTIST_NO_ENFORCEMENT=1` 只跳过原则,保留代码风格与交付规范) |
 | `ask_user_question` | 询问影响科学意图的未知选择，含推荐项/选项 UI；仅供模型直接调用，不开放给 codemode 嵌套调用，以保留分支问答记录 |
 | `sci_logs` | 查询各模块 tmux 计算的 manifest.jsonl(跑了什么、成败、耗时、日志) |
+| `sci_delegate` | Jev 判断子任务难度与 vision 需求,按固定路由启动 worker、绑定归属并派工;后续监看/验收沿用原流程 |
 | `/generate-report` | 按需中文自包含 HTML 报告 |
 | `/publication` | 按需一图一 Notebook,实际执行验证 |
 | `/reflect` | 结合真实结果讨论方法与局限 |
@@ -43,10 +44,14 @@ pi -e ./index.ts --skill ./skills
 
 ## 子代理派工
 
-不再内置协调工具与 worker/leader 模式。需要把工作交给另一个 pi 会话时,按 **subagent-delegation** skill 的约定执行:
+不恢复旧任务系统与 worker/leader 模式。需要把工作交给另一个 pi 会话时,按 **subagent-delegation** skill 准备 brief 与布局,再调用 **sci_delegate** 一次完成 Jev 分类、固定模型选择、启动、绑定和发任务:
 
-- **子代理用 herdr(主线,需派工方在 Herdr 内)**:固定布局——当前 workspace 下每个整体任务一个 tab(label = 任务名),窗口内每个 worker 一个 pane(agent 名 = 细分任务名),用 `herdr tab/pane/agent` 原生命令启动,再用 skill 自带 `bind-worker.py` 显式绑定派工归属;watcher 仅向绑定的 workspace + pane + Pi session 回告 worker 的 `idle/done`、`blocked` 或退出(含 result.md 是否就绪),不会仅凭名字监听全局 agent
-- **tmux 为降级路线**(不在 Herdr 内时):`tmux new-session` 起裸 `pi --session` + 哨兵文件循环等待,无自动回告
+- **子代理用 herdr(主线,需派工方在 Herdr 内)**:固定布局——当前 workspace 下每个整体任务一个 tab(label = 任务名),窗口内每个 worker 一个 pane(agent 名 = 细分任务名),用 `herdr tab/pane` 准备空 pane,然后 `sci_delegate` 用 `herdr agent start` 启动并调用原有 `bind-worker.py` 显式绑定派工归属,绑定成功才发任务;watcher 仅向绑定的 workspace + pane + Pi session 回告 worker 的 `idle/done`、`blocked` 或退出(含 result.md 是否就绪),不会仅凭名字监听全局 agent
+- **tmux 为降级路线**(不在 Herdr 内时):同一 `sci_delegate` 工具按路由启动独立 tmux/pi 会话,哨兵文件循环等待,无自动回告
+
+分类器为 `typesafe/jev-latest`。固定路由(文本 / vision):easy=`ollama-cloud/minimax-m3.1-flash` low / `zai-coding-cn/glm-5.3-flash` low;mid=`zai-coding-cn/glm-5.3` high / `ollama-cloud/deepseek-v4.1-flash:1017` high;hard 两者均为 `openai-codex/gpt-6-astra` high。`requiresVision=true` 强制视觉能力;分类或模型检查失败不自动降档。需配置 TypeSafe、Ollama Cloud、ZAI Coding CN 和 Codex 的对应认证/提供方。工具不切换主会话模型。
+
+每个 run 的 `dispatch.json` 保存分类与启动收据,不代替任务进度。重复派工被拒绝;部分启动/绑定/发任务失败时先查 pane/session 与收据,不要盲重试。现有状态回告、`result.md` 验收、补充返工和释放流程不变。工具不可用时先检查扩展加载与工具过滤,不要静默绕过路由手动启动。
 
 两条路线共享同一约定:worker 完成必须写 `.sci/runs/<task>/result.md`(哨兵),验收由派工方亲自读产物、核对标准,不接受 worker 自述。详见 `skills/subagent-delegation/SKILL.md`。
 

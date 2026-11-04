@@ -1,7 +1,7 @@
 {
   "name": "@panchongshi/pi-scientist",
   "version": "1.0.0",
-  "description": "Scientific analysis capabilities for pi: principles, conventions, domain skills, and convention-based tmux/Herdr subagent delegation",
+  "description": "Scientific analysis capabilities for pi: principles, conventions, domain skills, and Jev-routed tmux/Herdr subagent delegation",
   "type": "module",
   "keywords": [
     "pi-package"
