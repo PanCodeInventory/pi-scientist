@@ -27,7 +27,7 @@
 - `core/learning.ts`：交付登记、活动分支快照、目录提示、按需读取、独立 SDK 会话与生命周期。
 - `core/learning-store.ts`：主题快照、文本证据、提案格式、逐 skill 发布、冲突检查与回退。
 
-默认关闭。启用使用用户命令，不提供模型可调用的启用入口。后台使用当前物理模型及 thinking level，会产生额外费用。
+在受信任项目中默认开启：没有配置文件时视为 `enabled: true`，无需先运行启用命令，也不会仅因读取默认值而创建配置文件。显式 `enabled: false` 仍优先，未信任项目不会启动学习。on/off 使用用户命令，不提供模型可调用的开关入口。后台使用当前物理模型及 thinking level，会产生额外费用。
 历史 `PROJECT-MEMORY-DESIGN.md` 不作为现行规则。
 
 ## 使用
@@ -35,7 +35,7 @@
 在明确的分析项目根目录启动 Pi，信任项目后：
 
 ```text
-/sci-learn on                      启用当前 cwd 项目的自动学习
+/sci-learn on                      重新启用曾关闭的当前 cwd 项目（默认已开启）
 /sci-learn status                  查看主题目录、当前进程任务和最近五条记录
 /sci-learn reflect                 手动复盘当前分支最近一次交付或纠正
 /sci-learn reflect 样本对齐交付       显式指定要复盘的交付
@@ -43,7 +43,7 @@
 /sci-learn rollback <run-id> [topic] 回退一个主题；一轮包含多项发布时必须指定 topic
 ```
 
-根目录为当前 cwd 的真实路径，不猜 Git 根或父项目，子目录会话不会自动继承父目录配置。
+根目录为当前 cwd 的真实路径，不猜 Git 根或父项目，子目录会话不会自动继承父目录配置（包括父目录的 off）；无自身配置时仍默认开启。
 新配置只记录 `enabled`，技能名称不依赖项目路径，移动项目不需要重命名技能。历史带路径哈希的配置迁移到不同根目录时，需先人工核对并替换为新配置。
 `off` 不停用已发布技能；停用它们使用 Pi 资源筛选。
 
@@ -132,7 +132,7 @@ flowchart TD
 
 ```text
 <project>/.sci/learning/
-  config.json                      enabled（不再保存命名空间或路径哈希）
+  config.json                      可选；enabled，缺省为 true（不保存命名空间或路径哈希）
   publish.lock                     发布/回退期间持有
   runs/<run-id>/
     job.json                       来源 session/leaf、交付与主题原文基线

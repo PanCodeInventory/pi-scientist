@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { SessionManager, DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { registerLearning, createJob } from '../dist/core/learning.js';
-import { HOME, setEnabled, atomic, publish, readManaged, skillPath, readEvidence, header } from '../dist/core/learning-store.js';
+import { HOME, config, setEnabled, atomic, publish, readManaged, skillPath, readEvidence, header } from '../dist/core/learning-store.js';
 
 function fixture(t, run) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sci-learning-life-')));
@@ -19,6 +19,38 @@ function fixture(t, run) {
   const control = registerLearning(pi, { run, timeoutMs: 20 });
   return { root, source, hooks, commands, tools, notices, ctx, control, setTools: next => { activeTools = next; } };
 }
+
+test('fresh trusted projects learn by default; explicit off and trust checks still win', async t => {
+  let runs = 0;
+  const f = fixture(t, async () => { runs++; return 'no_change'; });
+  fs.rmSync(path.join(f.root, HOME), { recursive: true });
+  assert.deepEqual(config(f.root), { enabled: true });
+  const event = { systemPromptOptions: { sections: {} } }, before = f.hooks.get('before_agent_start');
+  before(event, f.ctx);
+  assert.match(event.systemPromptOptions.sections['scientist-learning'], /sci_delivery/);
+  await f.commands.get('sci-learn').handler('status', f.ctx);
+  assert.equal(JSON.parse(f.notices.at(-1)[0]).config.enabled, true);
+  assert.equal(fs.existsSync(path.join(f.root, HOME)), false, 'reading defaults must not create project state');
+  const delivery = f.tools.get('sci_delivery');
+  const untrusted = { ...f.ctx, isProjectTrusted: () => false };
+  before(event, untrusted); assert.equal(event.systemPromptOptions.sections['scientist-learning'], undefined);
+  await assert.rejects(delivery.execute('untrusted', { delivery: 'Done' }, undefined, undefined, untrusted), /untrusted/);
+  f.hooks.get('agent_settled')({ aborted: false }, f.ctx); await f.control.wait();
+  assert.equal(runs, 0, 'ordinary settlement is not a delivery');
+  await delivery.execute('default-on', { delivery: 'Delivered checked work' }, undefined, undefined, f.ctx);
+  f.source.appendMessage({ role: 'assistant', content: [{ type: 'text', text: 'Done' }], stopReason: 'stop', timestamp: 2 });
+  f.hooks.get('agent_settled')({ aborted: false }, f.ctx); await f.control.wait();
+  assert.equal(runs, 1);
+  assert.equal(readManaged(f.root, `${HOME}/config.json`), null);
+  await f.commands.get('sci-learn').handler('off', f.ctx);
+  assert.deepEqual(config(f.root), { enabled: false });
+  before(event, f.ctx); assert.equal(event.systemPromptOptions.sections['scientist-learning'], undefined);
+  await assert.rejects(delivery.execute('disabled', { delivery: 'Done' }, undefined, undefined, f.ctx), /disabled/);
+  await f.commands.get('sci-learn').handler('reflect', f.ctx); await f.control.wait();
+  assert.equal(runs, 1);
+  await f.commands.get('sci-learn').handler('on', f.ctx);
+  assert.deepEqual(config(f.root), { enabled: true });
+});
 
 test('learning prompt respects trust/tool filtering and malformed config cannot block unrelated work', t => {
   const f = fixture(t, async () => 'no_change'), event = { systemPromptOptions: { sections: { unrelated: 'keep' } } };
@@ -76,6 +108,7 @@ test('runtime reports partial publication and lists each topic status accurately
       { topic: 'annotation', description: 'Use for annotation checks.', changes: [{ ...changes[0], disposition: 'hold' }] },
     ] }, observed);
   });
+  fs.unlinkSync(path.join(f.root, HOME, 'config.json')); // Publication also honors default-on.
   await f.commands.get('sci-learn').handler('reflect independent topics', f.ctx); await f.control.wait();
   const [id] = fs.readdirSync(path.join(f.root, HOME, 'runs'));
   const result = JSON.parse(readManaged(f.root, `${HOME}/runs/${id}/result.json`));

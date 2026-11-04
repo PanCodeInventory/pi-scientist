@@ -1,6 +1,6 @@
 # pi-scientist
 
-面向生物信息分析的 Pi 能力包:科学工作原则、共享交付规范、领域与运行技能,以及按需调用 tmux / Herdr 的分析子代理派工约定。无内置分析角色、模式或协调状态机；另提供默认关闭的项目技能学习：从交付点派生受限的后台复盘会话。
+面向生物信息分析的 Pi 能力包:科学工作原则、共享交付规范、领域与运行技能,以及按需调用 tmux / Herdr 的分析子代理派工约定。无内置分析角色、模式或协调状态机；另提供在受信任项目中默认开启的项目技能学习：从交付点派生受限的后台复盘会话。
 
 ## 加载方式
 
@@ -71,7 +71,7 @@ pi -e ./index.ts --skill ./skills
 
 共享代码风格、目录、图形与复现规范见 [工作规范](docs/conventions.md)。历史审计文件与未实施的 `PROJECT-MEMORY-DESIGN.md` 不作为现行运行规则。
 
-项目 skill 学习已实现，默认关闭。在明确的分析根目录执行 `/sci-learn on` 启用；主代理在交付前调用 `sci_delivery`，正常结束后自动克隆当前活动分支，主会话不切换。复盘按分析类型匹配已有主题，按需读取相关 skill，必要时创建新主题；一个项目可有多个独立 skill，一次交付也可更新多个。目录和 `name` 直接使用分析主题，例如 `.pi/skills/sample-alignment/SKILL.md`，不加冗余前缀。复盘没有 shell/写文件工具；宿主逐主题检查来源、风险标记和基线后发布，不修改跨项目技能。`/sci-learn reflect` 可补做，`status` 查看主题目录及记录，`off` 停止学习，`rollback <run-id> [topic]` 按主题回退。新技能在下次加载或 `/reload` 后发现，遵守原有资源筛选。
+项目 skill 学习在受信任项目中默认开启，会产生额外模型费用。无需先执行 `/sci-learn on`；已有项目的显式关闭设置仍有效，可用 `/sci-learn on` 重新开启。在明确的分析根目录工作；主代理在交付前调用 `sci_delivery`，正常结束后自动克隆当前活动分支，主会话不切换。复盘按分析类型匹配已有主题，按需读取相关 skill，必要时创建新主题；一个项目可有多个独立 skill，一次交付也可更新多个。目录和 `name` 直接使用分析主题，例如 `.pi/skills/sample-alignment/SKILL.md`，不加冗余前缀。复盘没有 shell/写文件工具；宿主逐主题检查来源、风险标记和基线后发布，不修改跨项目技能。`/sci-learn reflect` 可补做，`status` 查看主题目录及记录，`off` 停止学习，`rollback <run-id> [topic]` 按主题回退。新技能在下次加载或 `/reload` 后发现，遵守原有资源筛选。
 
 后台调用有模型成本，完整复盘历史保存在项目 `.sci/learning/`，不要公开提交；关闭/reload 主会话会取消后台复盘。本版不是独立科学审核器。详见[实现与边界](docs/project-skill-learning.md)、[验收及消融](docs/project-skill-learning-cases.md)。
 

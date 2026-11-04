@@ -118,7 +118,7 @@ test('project extension-only loading reproduces missing skills; package loading 
           assert.doesNotMatch(prompt, /<name>visualization<\/name>|<name>tmux-runner<\/name>/);
           assert.match(options.sections['scientist-resources'], /not advertised in this run: visualization, tmux-runner/);
         }
-        assert.equal(options.sections['scientist-learning'], undefined, 'disabled learning must not mandate delivery registration');
+        assert.match(options.sections['scientist-learning'], /call sci_delivery once/, 'trusted projects enable learning by default, including after reload');
         if (pass === 0) await session.reload();
       }
     });

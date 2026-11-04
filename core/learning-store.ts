@@ -67,9 +67,9 @@ export function skillPath(_root: string, topic: string) {
     if (!Check(TopicSchema, topic) || topic === "legacy") throw new Error("Invalid or reserved skill topic");
     return `.pi/skills/${topic}/SKILL.md`;
 }
-export function config(root: string): Config | undefined {
+export function config(root: string): Config {
     const raw = readManaged(root, `${HOME}/config.json`);
-    if (raw === null) return undefined;
+    if (raw === null) return { enabled: true }; // Default on; explicit project opt-out still wins.
     const value = JSON.parse(raw);
     // Accept old configs without changing their files. New configs have no path-derived namespace.
     if (!value || typeof value.enabled !== "boolean" || (value.namespace !== undefined && value.namespace !== legacyNamespace(root)) || (value.skill !== undefined && value.skill !== legacySkillPath(root)))
@@ -173,7 +173,7 @@ export function publish(root: string, run: string, catalog: SkillSnapshot[], pro
     const lock = managed(root, `${HOME}/publish.lock`);
     const fd = fs.openSync(lock, "wx", 0o600);
     try {
-        if (!config(root)?.enabled) throw new Error("Learning disabled before publication");
+        if (!config(root).enabled) throw new Error("Learning disabled before publication");
         for (const skill of proposal.skills) {
             const record: SkillPublication = { topic: skill.topic, status: "failed" };
             records.push(record);

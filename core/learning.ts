@@ -165,7 +165,7 @@ export function registerLearning(pi: ExtensionAPI, options: { run?: ReflectionRu
         if (disposed || active) throw new Error("Reflection busy or session closed; use /sci-learn reflect after it finishes");
         if (!ctx.isProjectTrusted()) throw new Error("Project must be trusted");
         const root = fs.realpathSync(ctx.cwd);
-        if (!config(root)?.enabled) throw new Error("Enable learning at this project root with /sci-learn on");
+        if (!config(root).enabled) throw new Error("Learning is disabled for this project; re-enable with /sci-learn on");
         const job = createJob(root, ctx.sessionManager, key, delivery);
         if (!job) { notify(ctx, "This delivery already has a reflection record; see .sci/learning/runs"); return; }
         const controller = new AbortController();
@@ -193,7 +193,7 @@ export function registerLearning(pi: ExtensionAPI, options: { run?: ReflectionRu
         parameters: Type.Object({ delivery: Type.String({ minLength: 1, maxLength: 6000 }) }),
         async execute(id, args, signal, _update, ctx) {
             signal?.throwIfAborted();
-            if (!ctx.isProjectTrusted() || !config(fs.realpathSync(ctx.cwd))?.enabled) throw new Error("Project learning is disabled/untrusted; use /sci-learn on at the analysis root");
+            if (!ctx.isProjectTrusted() || !config(fs.realpathSync(ctx.cwd)).enabled) throw new Error("Project learning is disabled/untrusted; use /sci-learn on at the analysis root");
             if (active || pending) throw new Error("A reflection is already pending/running; retry with /sci-learn reflect when idle");
             pending = { key: id, delivery: args.delivery };
             return textResult("Delivery registered. Finish the user-facing handoff now. Reflection will clone the active branch after normal settlement; this is not an acceptance verdict.");
@@ -203,7 +203,7 @@ export function registerLearning(pi: ExtensionAPI, options: { run?: ReflectionRu
         const sections = _event.systemPromptOptions.sections;
         delete sections["scientist-learning"];
         try {
-            if (ctx.isProjectTrusted() && config(fs.realpathSync(ctx.cwd))?.enabled && pi.getActiveTools().includes("sci_delivery"))
+            if (ctx.isProjectTrusted() && config(fs.realpathSync(ctx.cwd)).enabled && pi.getActiveTools().includes("sci_delivery"))
                 sections["scientist-learning"] = "Project skill learning is enabled here. After substantial delivered work, call sci_delivery once with goal, evidence paths, actual checks and limitations before your final handoff. Do not call for ordinary questions or progress reports. Do not equate delivery with acceptance. Reflection is isolated and automatic after settlement.";
         } catch (error) { notify(ctx, `项目学习未启用：${String(error)}`, true); }
     });
@@ -234,7 +234,7 @@ export function registerLearning(pi: ExtensionAPI, options: { run?: ReflectionRu
                     const recent = fs.existsSync(runs) ? fs.readdirSync(runs).filter(id => /^[a-f0-9]{24}$/.test(id))
                         .sort((a, b) => fs.statSync(path.join(runs, b)).mtimeMs - fs.statSync(path.join(runs, a)).mtimeMs).slice(0, 5)
                         .map(id => ({ id, result: JSON.parse(readManaged(root, `${HOME}/runs/${id}/result.json`) ?? "null") })) : [];
-                    notify(ctx, JSON.stringify({ config: config(root) ?? null, skills: snapshotSkills(root).map(({ topic, description, writable }) => ({ topic, description, writable })), pending: !!pending, runningHere: !!active, recent, records: `${HOME}/runs` }));
+                    notify(ctx, JSON.stringify({ config: config(root), skills: snapshotSkills(root).map(({ topic, description, writable }) => ({ topic, description, writable })), pending: !!pending, runningHere: !!active, recent, records: `${HOME}/runs` }));
                 } else if (action === "reflect") {
                     if (!ctx.isIdle()) throw new Error("Wait for the main run to settle before reflecting");
                     launch(ctx, `manual-${randomUUID()}`, rest.join(" ") || "Review the most recent delivered task on this branch, including user corrections. Ordinary discussion alone warrants no_change.");
